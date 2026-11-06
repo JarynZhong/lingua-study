@@ -1,0 +1,11 @@
+{
+  "name": "lingua-api",
+  "version": "1.0.0",
+  "main": "study-data.js",
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.0.0"
+  }
+}
