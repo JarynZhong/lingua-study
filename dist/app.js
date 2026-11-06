@@ -156,7 +156,7 @@ function renderGrammar(){
       const label = `例句 ${i+1}，${name}`;
       const metadata = i===0 ? `<td rowspan="${count}" class="grammar-meta"><div class="grammar-title-cell"><span class="grammar-grip" draggable="true" title="拖动调整顺序" aria-hidden="true">⠿</span>${editorCell('title',g.title,0,g.id,null,'语法名称','语法名称')}</div></td>` : '';
       const content = example.empty ? (!examples.length && i===0 ? '<span class="no-examples">还没有例句</span>' : '') : `<div class="compact-example">
-        <span draggable="true" data-example-drag="${esc(example.id)}" title="拖动调整例句顺序" aria-label="拖动调整例句顺序" style="cursor:grab;user-select:none">⠿</span><span aria-hidden="true">・</span>${editorCell('text',example.text,2,g.id,example.id,'输入例句…',label)}
+        <span data-example-drag="${esc(example.id)}" title="拖动调整例句顺序" aria-label="拖动调整例句顺序" style="cursor:grab;user-select:none;touch-action:none">⠿</span><span aria-hidden="true">・</span>${editorCell('text',example.text,2,g.id,example.id,'输入例句…',label)}
         <button type="button" data-delete-example="${esc(example.id)}" aria-label="删除${esc(label)}">×</button></div>`;
       const audio = example.empty ? '' : `<button type="button" data-pronounce="${esc(example.id)}" data-kind="text" aria-label="朗读${esc(label)}">◖))</button>`;
       return `<tr id="${i===0?'grammar-'+esc(g.id):'example-'+esc(example.id)}" data-id="${esc(g.id)}" data-example-id="${esc(example.id || '')}" class="${i===0?'grammar-start':''}">${metadata}${grammarLinksCell(links[i])}<td class="example-cell">${content}${example.translation ? `<details><summary>查看已保存译文</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;padding:6px 8px">${esc(example.translation)}</div></details>` : ''} </td><td class="pronunciation-cell">${audio}</td></tr>`;
@@ -164,7 +164,7 @@ function renderGrammar(){
     return rows+`<tr class="add-example-row" data-id="${esc(g.id)}"><td class="grammar-links"><button type="button" data-link-grammar="${esc(g.id)}">＋ 关联语法</button></td><td colspan="2"><button data-add-example="${esc(g.id)}">＋ 添加例句</button></td></tr>`
   }).join(''):`<tr><td colspan="4" class="empty">${q?'没有匹配记录':'点击「添加语法」开始记录。'}</td></tr>`;
   bindGrammarLinks();
-  bindGrammarLinkDrops();
+  bindItemSorting();
   $$('#grammarList [contenteditable]').forEach(cell=>{
     const id=cell.closest('tr').dataset.id;
     cell.oninput=()=>{const g=db.grammar.find(g=>g.id===id);if(cell.dataset.example){const e=g.exampleItems.find(e=>e.id===cell.dataset.example);e[cell.dataset.field]=cell.innerText.replace(/\r/g,'');if(cell.dataset.field==='text'){e.language=speechLanguage(e.text);e.detectedText=e.text.trim()}syncExamples(g)}else g[cell.dataset.field]=cell.innerText.replace(/\r/g,'');persist()};
@@ -180,64 +180,75 @@ function renderGrammar(){
 }
 
 function bindGrammarDrops() {
-  let draggedExample = null;
-  const rows = $$('#grammarList tr[data-id]');
-
-  function clearExampleDrag() {
-    draggedExample?.row.classList.remove('dragging');
-    draggedExample = null;
-    rows.forEach(row => row.style.outline = '');
-  }
-
-  for (const handle of $$('#grammarList [data-example-drag]')) {
-    handle.ondragstart = event => {
-      const row = handle.closest('tr');
-      draggedExample = { row, grammarId: row.dataset.id, exampleId: handle.dataset.exampleDrag };
-      row.classList.add('dragging');
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', draggedExample.exampleId);
-    };
-    handle.ondragend = clearExampleDrag;
-  }
-
-  for (const row of rows) {
-    const validExampleTarget = () => draggedExample &&
-      row.dataset.id === draggedExample.grammarId &&
-      row.dataset.exampleId && row.dataset.exampleId !== draggedExample.exampleId;
-
+  for (const row of $$('#grammarList tr[data-id]')) {
     row.ondragover = event => {
-      if (!dragId && !validExampleTarget()) return;
+      if (!dragId) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = 'move';
-      if (validExampleTarget()) row.style.outline = '2px solid #76b4dd';
     };
-    row.ondragleave = event => {
-      if (!row.contains(event.relatedTarget)) row.style.outline = '';
-    };
-
     row.ondrop = event => {
+      if (!dragId || dragId === row.dataset.id) return;
       event.preventDefault();
-      if (draggedExample) {
-        if (!validExampleTarget()) return;
-        const grammar = db.grammar.find(item => item.id === draggedExample.grammarId);
-        const examples = grammar.exampleItems;
-        const from = examples.findIndex(item => item.id === draggedExample.exampleId);
-        const target = examples.findIndex(item => item.id === row.dataset.exampleId);
-        clearExampleDrag();
-        if (from < 0 || target < 0) return;
-        examples.splice(target, 0, examples.splice(from, 1)[0]);
-        syncExamples(grammar);
-      } else {
-        if (!dragId || dragId === row.dataset.id) return;
-        const from = db.grammar.findIndex(item => item.id === dragId);
-        const target = db.grammar.findIndex(item => item.id === row.dataset.id);
-        if (from < 0 || target < 0) return;
-        db.grammar.splice(target, 0, db.grammar.splice(from, 1)[0]);
-        dragId = null;
-      }
+      const from = db.grammar.findIndex(item => item.id === dragId);
+      const target = db.grammar.findIndex(item => item.id === row.dataset.id);
+      if (from < 0 || target < 0) return;
+      db.grammar.splice(target, 0, db.grammar.splice(from, 1)[0]);
+      dragId = null;
       persist();
       renderGrammar();
     };
+  }
+}
+function bindItemSorting() {
+  for (const handle of $$('#grammarList [data-example-drag], #grammarList [data-link-handle]')) {
+    const link = handle.hasAttribute('data-link-handle');
+    const selector = link ? '[data-link-order]' : 'tr[data-example-id]:not([data-example-id=""])';
+    const source = handle.closest(selector);
+    const grammarId = source.closest('tr').dataset.id;
+    let pointerId, target;
+
+    function clearTarget() {
+      if (target) target.style.outline = '';
+      target = null;
+    }
+
+    handle.onpointerdown = event => {
+      if (!event.isPrimary || event.button !== 0) return;
+      event.preventDefault();
+      pointerId = event.pointerId;
+      handle.setPointerCapture(pointerId);
+      source.classList.add(link ? 'link-dragging' : 'dragging');
+    };
+    handle.onpointermove = event => {
+      if (event.pointerId !== pointerId) return;
+      const cell = document.elementFromPoint(event.clientX, event.clientY)?.closest(selector);
+      clearTarget();
+      if (!cell || cell === source || cell.closest('tr').dataset.id !== grammarId) return;
+      target = cell;
+      target.style.outline = '2px solid #76b4dd';
+    };
+    handle.onpointerup = event => {
+      if (event.pointerId !== pointerId) return;
+      handle.onpointermove(event);
+      const destination = target;
+      reset();
+      if (!destination) return;
+      const grammar = db.grammar.find(item => item.id === grammarId);
+      const items = link ? grammar.linkedIds : grammar.exampleItems;
+      const from = link ? items.indexOf(source.dataset.linkOrder) : items.findIndex(item => item.id === source.dataset.exampleId);
+      const to = link ? items.indexOf(destination.dataset.linkOrder) : items.findIndex(item => item.id === destination.dataset.exampleId);
+      if (from < 0 || to < 0) return;
+      items.splice(to, 0, items.splice(from, 1)[0]);
+      if (!link) syncExamples(grammar);
+      persist();
+      renderGrammar();
+    };
+    function reset() {
+      pointerId = undefined;
+      clearTarget();
+      source.classList.remove(link ? 'link-dragging' : 'dragging');
+    }
+    handle.onlostpointercapture = reset;
   }
 }
 function parseTSV(text){const rows=[[]];let field='',quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(c==='"'){if(quoted&&text[i+1]==='"'){field+='"';i++}else if(quoted||field==='')quoted=!quoted;else field+=c}else if(!quoted&&(c==='\t'||c==='\n'||c==='\r')){rows.at(-1).push(field);field='';if(c!=='\t'){if(c==='\r'&&text[i+1]==='\n')i++;rows.push([])}}else field+=c}rows.at(-1).push(field);if(rows.length>1&&rows.at(-1).length===1&&rows.at(-1)[0]==='')rows.pop();return rows}
@@ -342,7 +353,7 @@ function grammarLinksCell(item){
   if(!item)return '<td class="grammar-links"></td>';
   const id=esc(item.id), label=esc(grammarLabel(item));
   return `<td class="grammar-links" data-link-order="${id}"><div class="grammar-link-item">
-    <span class="grammar-grip" draggable="true" title="拖动调整关联语法顺序" aria-hidden="true">⠿</span>
+    <span class="grammar-grip" data-link-handle style="touch-action:none" title="拖动调整关联语法顺序" aria-hidden="true">⠿</span>
     <a draggable="false" href="#grammar-${id}" data-jump-grammar="${id}">${label}</a>
     <button type="button" data-unlink-grammar="${id}" aria-label="解除关联 ${label}">×</button>
   </div></td>`;
@@ -396,52 +407,6 @@ function chooseGrammar(title, candidates, onSelect, help=''){
   showMatches();
   if(!dialog.open)dialog.showModal();
   search.focus();
-}
-function bindGrammarLinkDrops(){
-  let dragged = null;
-  const cells = $('#grammarList [data-link-order]');
-  const clear = () => {
-    dragged?.classList.remove('link-dragging');
-    dragged = null;
-    cells.forEach(cell => cell.classList.remove('link-drop-target'));
-  };
-  for(const cell of cells){
-    const grammarId = cell.closest('tr').dataset.id;
-    const canDrop = () => dragged && dragged !== cell && dragged.closest('tr').dataset.id === grammarId;
-    const handle = cell.querySelector('.grammar-grip');
-    handle.ondragstart = event => {
-      dragged = cell;
-      cell.classList.add('link-dragging');
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain',cell.dataset.linkOrder);
-    };
-    handle.ondragend = clear;
-    cell.ondragover = event => {
-      if(!canDrop())return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.dataTransfer.dropEffect = 'move';
-      cell.classList.add('link-drop-target');
-    };
-    cell.ondragleave = event => {
-      if(!cell.contains(event.relatedTarget))cell.classList.remove('link-drop-target');
-    };
-    cell.ondrop = event => {
-      if(!canDrop())return;
-      event.preventDefault();
-      event.stopPropagation();
-      const grammar = db.grammar.find(item=>item.id===grammarId);
-      const ids = [...new Set(grammar.linkedIds)];
-      const from = ids.indexOf(dragged.dataset.linkOrder);
-      const target = ids.indexOf(cell.dataset.linkOrder);
-      clear();
-      if(from < 0 || target < 0)return;
-      ids.splice(target,0,ids.splice(from,1)[0]);
-      grammar.linkedIds = ids;
-      persist();
-      renderGrammar();
-    };
-  }
 }
 function bindGrammarLinks(){
   for(const button of $$('[data-link-grammar]'))button.onclick=()=>{
