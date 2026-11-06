@@ -3,30 +3,121 @@ const langs={en:'English','zh-CN':'中文',ja:'日本語'}, fields=['title','not
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>crypto.randomUUID();let db,api={key:'',region:''},source='en',timer,revision=0,dragId=null,lookupRevision=0,lookupRecord=null;
 try{db=JSON.parse(localStorage.getItem('lingua-v1'))}catch{}if(!db||!Array.isArray(db.grammar)||!Array.isArray(db.words))db={grammar:[],words:[]};
-try{api=JSON.parse(sessionStorage.getItem('lingua-api')||localStorage.getItem('lingua-api')||'null')||api;$('#rememberKey').checked=!!localStorage.getItem('lingua-api')}catch{}
-$('#apiKey').value=api.key||'';$('#apiRegion').value=api.region||'';
 function toast(text){$('#toast').textContent=text;$('#toast').style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').style.display='none',3500)}
 function persist(){try{localStorage.setItem('lingua-v1',JSON.stringify(db));$('#saveState').textContent='已自动保存';return true}catch{$('#saveState').textContent='保存失败，请导出备份';toast('浏览器存储不可用，请导出备份');return false}}
-function view(name){document.body.classList.toggle('grammar-workspace',name==='grammar');$$('.view').forEach(el=>el.hidden=el.id!==name);$$('nav button').forEach(el=>el.classList.toggle('active',el.dataset.view===name));if(name==='grammar')renderGrammar();if(name==='words')renderWords()}
+function view(name){if(name==='settings'&&!translatorAccess.owner)return;document.body.classList.toggle('grammar-workspace',name==='grammar');$$('.view').forEach(el=>el.hidden=el.id!==name);$$('nav button').forEach(el=>el.classList.toggle('active',el.dataset.view===name));if(name==='grammar')renderGrammar();if(name==='words')renderWords()}
 $$('[data-view]').forEach(b=>b.onclick=()=>view(b.dataset.view));
+let translatorAccess = { owner: false, configured: false, shared: false };
+const apiSettingsLinks = $$('[data-view="settings"]');
+apiSettingsLinks.forEach(button => {
+  button.hidden = true;
+  button.textContent = '翻译管理';
+});
+$('#settings').hidden = true;
+
+const sharingPanel = document.createElement('section');
+sharingPanel.className = 'settings-card';
+sharingPanel.innerHTML = '<h2>翻译共享</h2><p id="sharingState" role="status"></p><button type="button" class="primary" id="sharingToggle" disabled>开启访客翻译</button>';
+$('#apiForm').before(sharingPanel);
+
+function showTranslatorAccess() {
+  apiSettingsLinks.forEach(button => button.hidden = !translatorAccess.owner);
+  $('#apiForm').hidden = translatorAccess.configured;
+  $('#sharingToggle').disabled = !translatorAccess.owner || !translatorAccess.configured;
+  $('#sharingToggle').textContent = translatorAccess.shared ? '关闭访客翻译' : '开启访客翻译';
+  $('#sharingState').textContent = !translatorAccess.configured
+    ? '先在 Azure 的生产环境变量中设置 LINGUA_TRANSLATOR_KEY 和区域（如资源要求），即可开启共享。'
+    : translatorAccess.shared
+      ? '已开放。访客无需登录，每天共用 20,000 字符。'
+      : '仅你可以使用翻译。';
+}
+
+async function translatorRequest(path, options) {
+  const response = await fetch('/api/' + path, { cache: 'no-store', ...options });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data) throw Error(data?.error || '翻译服务暂不可用');
+  return data;
+}
+
+$('#sharingToggle').onclick = async () => {
+  $('#sharingToggle').disabled = true;
+  try {
+    translatorAccess = await translatorRequest('translator-access', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shared: !translatorAccess.shared })
+    });
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    showTranslatorAccess();
+  }
+};
+
+const translatorReady = translatorRequest('translator-access')
+  .then(access => {
+    translatorAccess = access;
+    if (access.owner && !access.configured) {
+      try{api=JSON.parse(sessionStorage.getItem('lingua-api')||localStorage.getItem('lingua-api')||'null')||api;$('#rememberKey').checked=!!localStorage.getItem('lingua-api')}catch{}
+      $('#apiKey').value=api.key||'';$('#apiRegion').value=api.region||'';
+      apiBadge();
+    }
+    showTranslatorAccess();
+  })
+  .catch(() => {});
+
 function apiBadge(){$('#apiBadge').textContent=api.key?'Microsoft · 已配置':'配置翻译 API'}apiBadge();
 function formConfig(){return {key:$('#apiKey').value.trim(),region:$('#apiRegion').value.trim()}}
 $('#apiForm').onsubmit=e=>{e.preventDefault();api=formConfig();try{sessionStorage.removeItem('lingua-api');localStorage.removeItem('lingua-api');($('#rememberKey').checked?localStorage:sessionStorage).setItem('lingua-api',JSON.stringify(api));$('#apiStatus').textContent='配置已保存。';apiBadge();toast('API 配置已保存');schedule()}catch{$('#apiStatus').textContent='配置仅在本次页面打开期间有效，浏览器禁止保存。';apiBadge()}};
 $('#clearKey').onclick=()=>{api={key:'',region:''};try{sessionStorage.removeItem('lingua-api');localStorage.removeItem('lingua-api')}catch{}$('#apiKey').value='';$('#apiRegion').value='';$('#rememberKey').checked=false;$('#apiStatus').textContent='密钥已清除';apiBadge();revision++;clearTimeout(timer)};
 const msLang=l=>l==='zh-CN'?'zh-Hans':l;
-async function microsoft(path,text,params={},config=api){if(!config.key)throw Error('请先在 API 设置填写微软 Translator 密钥');const query=new URLSearchParams({'api-version':'3.0',...params});const headers={'Content-Type':'application/json','Ocp-Apim-Subscription-Key':config.key};if(config.region)headers['Ocp-Apim-Subscription-Region']=config.region;let response;try{response=await fetch('https://api.cognitive.microsofttranslator.com/'+path+'?'+query,{method:'POST',headers,body:JSON.stringify([{Text:text}]),signal:AbortSignal.timeout(20000)})}catch{throw Error('网络连接失败或超时，请检查网络后重试')}const data=await response.json();if(!response.ok){const msg=response.status===401||response.status===403?'密钥或区域不正确，或资源无权访问':response.status===429?'请求过快或额度已用完，请检查 Azure 资源':'微软 API 请求失败（'+response.status+'）';throw Error(msg)}return data}
+async function microsoft(path,text,params={},config=api){
+  await translatorReady;
+  if(config===api && translatorAccess.configured) {
+    return translatorRequest('translate-text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operation: path, input: text, source: params.from, target: params.to })
+    });
+  }
+  if(!translatorAccess.owner)throw Error('翻译共享目前已关闭');
+if(!config.key)throw Error('请先在 API 设置填写微软 Translator 密钥');const query=new URLSearchParams({'api-version':'3.0',...params});const headers={'Content-Type':'application/json','Ocp-Apim-Subscription-Key':config.key};if(config.region)headers['Ocp-Apim-Subscription-Region']=config.region;let response;try{response=await fetch('https://api.cognitive.microsofttranslator.com/'+path+'?'+query,{method:'POST',headers,body:JSON.stringify([{Text:text}]),signal:AbortSignal.timeout(20000)})}catch{throw Error('网络连接失败或超时，请检查网络后重试')}const data=await response.json();if(!response.ok){const msg=response.status===401||response.status===403?'密钥或区域不正确，或资源无权访问':response.status===429?'请求过快或额度已用完，请检查 Azure 资源':'微软 API 请求失败（'+response.status+'）';throw Error(msg)}return data}
 async function translate(text,from,to,config=api){if(from===to)return text;const data=await microsoft('translate',text,{from:msLang(from),to:msLang(to)},config);const result=data?.[0]?.translations?.[0]?.text;if(typeof result!=='string')throw Error('微软 API 返回格式无效');return result}
 $('#testApi').onclick=async()=>{const button=$('#testApi');button.disabled=true;$('#apiStatus').textContent='正在测试…';try{const result=await translate('Hello','en','zh-CN',formConfig());$('#apiStatus').textContent='连接成功：Hello → '+result+'。请保存配置。'}catch(e){$('#apiStatus').textContent=e.message}finally{button.disabled=false}};
-function updateTargets(){$$('[data-target]').forEach(el=>el.hidden=el.dataset.target===source)}
+function updateTargets(){$('#input').lang=source;$$('[data-target]').forEach(el=>el.hidden=el.dataset.target===source)}
 $$('[name="source"]').forEach(box=>box.onchange=()=>{source=box.value;$$('[name="source"]').forEach(el=>el.checked=el.value===source);updateTargets();schedule()});
 let completedTranslation = null;
 function schedule(){revision++;clearTimeout(timer);$('#count').textContent=$('#input').value.length+' / 5000';timer=setTimeout(runTranslation,700)}
-async function runTranslation(){const version=++revision,text=$('#input').value.trim(),from=source;completedTranslation=null;updateTargets();if(!text){Object.keys(langs).forEach(k=>$('#out-'+k).textContent='译文将在这里呈现');$('#status').textContent='等待输入';return}if(!api.key){$('#status').textContent='请先配置翻译 API';Object.keys(langs).filter(k=>k!==from).forEach(k=>$('#out-'+k).textContent='在「API 设置」填写密钥后开始翻译');return}$('#status').textContent='正在翻译…';const targets=Object.keys(langs).filter(k=>k!==from);targets.forEach(k=>$('#out-'+k).textContent='翻译中…');const results=await Promise.allSettled(targets.map(async k=>{const value=await translate(text,from,k);if(version===revision)$('#out-'+k).textContent=value}));if(version!==revision)return;results.forEach((r,i)=>{if(r.status==='rejected')$('#out-'+targets[i]).textContent=r.reason.message});const failed=results.some(r=>r.status==='rejected');
+async function runTranslation(){await translatorReady;const version=++revision,text=$('#input').value.trim(),from=source;completedTranslation=null;updateTargets();if(!text){Object.keys(langs).forEach(k=>$('#out-'+k).textContent='译文将在这里呈现');$('#status').textContent='等待输入';return}if(!translatorAccess.configured&&(!translatorAccess.owner||!api.key)){
+  const message=translatorAccess.owner?'请先配置翻译服务':'翻译共享目前已关闭';
+  $('#status').textContent=message;
+  Object.keys(langs).filter(k=>k!==from).forEach(k=>$('#out-'+k).textContent=message);
+  return;
+}$('#status').textContent='正在翻译…';const targets=Object.keys(langs).filter(k=>k!==from);targets.forEach(k=>$('#out-'+k).textContent='翻译中…');const results=await Promise.allSettled(targets.map(async k=>{const value=await translate(text,from,k);if(version===revision)$('#out-'+k).textContent=value}));if(version!==revision)return;results.forEach((r,i)=>{if(r.status==='rejected')$('#out-'+targets[i]).textContent=r.reason.message});const failed=results.some(r=>r.status==='rejected');
   if(!failed){
     const texts=Object.fromEntries(Object.keys(langs).map(lang=>[lang,lang===from?text:$('#out-'+lang).textContent]));
     if(Object.values(texts).every(value=>value.trim()))completedTranslation={version,text,from,texts};
   }
   $('#status').textContent=failed?'翻译失败 · 可点击重新翻译':'翻译完成'}
+const sourceInput = $('#input');
+sourceInput.spellcheck = true;
+const cleanupLabel = document.createElement('label');
+cleanupLabel.style.cssText = 'display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#476578';
+const cleanupEnabled = document.createElement('input');
+cleanupEnabled.type = 'checkbox';
+cleanupEnabled.checked = true;
+cleanupLabel.append(cleanupEnabled, ' 自动整理原文格式');
+$('#retry').before(cleanupLabel);
+
+sourceInput.addEventListener('blur', () => {
+  if (!cleanupEnabled.checked) return;
+  let cleaned = sourceInput.value.split('\n').map(line => line.trim().replace(/ {2,}/g, ' ')).join('\n').trim();
+  if (source === 'en') cleaned = cleaned.replace(/ +([,.;!?])/g, '$1');
+  else cleaned = cleaned.replace(/ +([，。！？；、])/g, '$1');
+  if (cleaned === sourceInput.value) return;
+  sourceInput.value = cleaned;
+  schedule();
+});
 $('#input').oninput=schedule;$('#retry').onclick=()=>{clearTimeout(timer);runTranslation()};$('#clear').onclick=()=>{$('#input').value='';schedule()};
 $('#readInput').onclick=()=>speak($('#input').value,source);$$('[data-speak]').forEach(b=>b.onclick=()=>speak($('#out-'+b.dataset.speak).textContent,b.dataset.speak));
 $('#copy').onclick=async()=>{try{await navigator.clipboard.writeText(Object.keys(langs).filter(k=>k!==source).map(k=>langs[k]+'\n'+$('#out-'+k).textContent).join('\n\n'));toast('已复制两种译文')}catch{toast('请选中文字手动复制')}};
@@ -46,7 +137,7 @@ function normalizeLanguage(language){return /^zh/.test(language)?'zh-CN':languag
 async function detectExample(id,exampleId){
   const g=db.grammar.find(g=>g.id===id),example=g?.exampleItems.find(e=>e.id===exampleId);if(!example)return;
   const text=example.text.trim();example.language=speechLanguage(text);example.detectedText=text;
-  if(!api.key||!text)return;
+  if(!(translatorAccess.configured||api.key)||!text)return;
   try{const data=await microsoft('detect',text.slice(0,5000));const current=db.grammar.find(g=>g.id===id)?.exampleItems.find(e=>e.id===exampleId);if(!current||current.text.trim()!==text)return;current.language=normalizeLanguage(data?.[0]?.language||speechLanguage(text));current.detectedText=text;persist()}catch{}
 }
 function blankExample(){return {id:uid(),text:'',translation:'',language:'',detectedText:''}}
