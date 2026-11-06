@@ -1,0 +1,207 @@
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const langs={en:'English','zh-CN':'中文',ja:'日本語'}, fields=['title','note','examples'];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>crypto.randomUUID();let db,api={key:'',region:''},source='en',timer,revision=0,dragId=null,lookupRevision=0,lookupRecord=null;
+try{db=JSON.parse(localStorage.getItem('lingua-v1'))}catch{}if(!db||!Array.isArray(db.grammar)||!Array.isArray(db.words))db={grammar:[],words:[]};
+try{api=JSON.parse(sessionStorage.getItem('lingua-api')||localStorage.getItem('lingua-api')||'null')||api;$('#rememberKey').checked=!!localStorage.getItem('lingua-api')}catch{}
+$('#apiKey').value=api.key||'';$('#apiRegion').value=api.region||'';
+function toast(text){$('#toast').textContent=text;$('#toast').style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').style.display='none',3500)}
+function persist(){try{localStorage.setItem('lingua-v1',JSON.stringify(db));$('#saveState').textContent='已自动保存';return true}catch{$('#saveState').textContent='保存失败，请导出备份';toast('浏览器存储不可用，请导出备份');return false}}
+function view(name){document.body.classList.toggle('grammar-workspace',name==='grammar');$$('.view').forEach(el=>el.hidden=el.id!==name);$$('nav button').forEach(el=>el.classList.toggle('active',el.dataset.view===name));if(name==='grammar')renderGrammar();if(name==='words')renderWords()}
+$$('[data-view]').forEach(b=>b.onclick=()=>view(b.dataset.view));
+function apiBadge(){$('#apiBadge').textContent=api.key?'Microsoft · 已配置':'配置翻译 API'}apiBadge();
+function formConfig(){return {key:$('#apiKey').value.trim(),region:$('#apiRegion').value.trim()}}
+$('#apiForm').onsubmit=e=>{e.preventDefault();api=formConfig();try{sessionStorage.removeItem('lingua-api');localStorage.removeItem('lingua-api');($('#rememberKey').checked?localStorage:sessionStorage).setItem('lingua-api',JSON.stringify(api));$('#apiStatus').textContent='配置已保存。';apiBadge();toast('API 配置已保存');schedule()}catch{$('#apiStatus').textContent='配置仅在本次页面打开期间有效，浏览器禁止保存。';apiBadge()}};
+$('#clearKey').onclick=()=>{api={key:'',region:''};try{sessionStorage.removeItem('lingua-api');localStorage.removeItem('lingua-api')}catch{}$('#apiKey').value='';$('#apiRegion').value='';$('#rememberKey').checked=false;$('#apiStatus').textContent='密钥已清除';apiBadge();revision++;clearTimeout(timer)};
+const msLang=l=>l==='zh-CN'?'zh-Hans':l;
+async function microsoft(path,text,params={},config=api){if(!config.key)throw Error('请先在 API 设置填写微软 Translator 密钥');const query=new URLSearchParams({'api-version':'3.0',...params});const headers={'Content-Type':'application/json','Ocp-Apim-Subscription-Key':config.key};if(config.region)headers['Ocp-Apim-Subscription-Region']=config.region;let response;try{response=await fetch('https://api.cognitive.microsofttranslator.com/'+path+'?'+query,{method:'POST',headers,body:JSON.stringify([{Text:text}]),signal:AbortSignal.timeout(20000)})}catch{throw Error('网络连接失败或超时，请检查网络后重试')}const data=await response.json();if(!response.ok){const msg=response.status===401||response.status===403?'密钥或区域不正确，或资源无权访问':response.status===429?'请求过快或额度已用完，请检查 Azure 资源':'微软 API 请求失败（'+response.status+'）';throw Error(msg)}return data}
+async function translate(text,from,to,config=api){if(from===to)return text;const data=await microsoft('translate',text,{from:msLang(from),to:msLang(to)},config);const result=data?.[0]?.translations?.[0]?.text;if(typeof result!=='string')throw Error('微软 API 返回格式无效');return result}
+$('#testApi').onclick=async()=>{const button=$('#testApi');button.disabled=true;$('#apiStatus').textContent='正在测试…';try{const result=await translate('Hello','en','zh-CN',formConfig());$('#apiStatus').textContent='连接成功：Hello → '+result+'。请保存配置。'}catch(e){$('#apiStatus').textContent=e.message}finally{button.disabled=false}};
+function updateTargets(){$$('[data-target]').forEach(el=>el.hidden=el.dataset.target===source)}
+$$('[name="source"]').forEach(box=>box.onchange=()=>{source=box.value;$$('[name="source"]').forEach(el=>el.checked=el.value===source);updateTargets();schedule()});
+function schedule(){revision++;clearTimeout(timer);$('#count').textContent=$('#input').value.length+' / 5000';timer=setTimeout(runTranslation,700)}
+async function runTranslation(){const version=++revision,text=$('#input').value.trim(),from=source;updateTargets();if(!text){Object.keys(langs).forEach(k=>$('#out-'+k).textContent='译文将在这里呈现');$('#status').textContent='等待输入';return}if(!api.key){$('#status').textContent='请先配置翻译 API';Object.keys(langs).filter(k=>k!==from).forEach(k=>$('#out-'+k).textContent='在「API 设置」填写密钥后开始翻译');return}$('#status').textContent='正在翻译…';const targets=Object.keys(langs).filter(k=>k!==from);targets.forEach(k=>$('#out-'+k).textContent='翻译中…');const results=await Promise.allSettled(targets.map(async k=>{const value=await translate(text,from,k);if(version===revision)$('#out-'+k).textContent=value}));if(version!==revision)return;results.forEach((r,i)=>{if(r.status==='rejected')$('#out-'+targets[i]).textContent=r.reason.message});$('#status').textContent=results.some(r=>r.status==='rejected')?'翻译失败 · 可点击重新翻译':'翻译完成'}
+$('#input').oninput=schedule;$('#retry').onclick=()=>{clearTimeout(timer);runTranslation()};$('#clear').onclick=()=>{$('#input').value='';schedule()};
+$('#readInput').onclick=()=>speak($('#input').value,source);$$('[data-speak]').forEach(b=>b.onclick=()=>speak($('#out-'+b.dataset.speak).textContent,b.dataset.speak));
+$('#copy').onclick=async()=>{try{await navigator.clipboard.writeText(Object.keys(langs).filter(k=>k!==source).map(k=>langs[k]+'\n'+$('#out-'+k).textContent).join('\n\n'));toast('已复制两种译文')}catch{toast('请选中文字手动复制')}};
+const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;let recognition,recording=false;if(Recognition){recognition=new Recognition();recognition.onresult=e=>{$('#input').value=($('#input').value+' '+e.results[0][0].transcript).trim().slice(0,5000);schedule()};recognition.onend=()=>{recording=false;$('#mic').classList.remove('listening');$('#mic').textContent='♩ 语音输入'};recognition.onerror=e=>toast(e.error==='not-allowed'?'请允许麦克风访问后重试':'语音识别失败：'+e.error)}$('#mic').onclick=()=>{if(!recognition){toast('当前浏览器不支持语音输入');return}if(recording){recognition.stop();return}try{recognition.lang={en:'en-US',ja:'ja-JP','zh-CN':'zh-CN'}[source];recognition.start();recording=true;$('#mic').classList.add('listening');$('#mic').textContent='● 正在聆听 · 点击停止'}catch{toast('语音识别尚未就绪，请稍后再试')}};
+function localLanguage(text){if(!text.trim())return '—';const ja=/[\u3040-\u30ff]/.test(text),zh=/[\u3400-\u9fff]/.test(text),en=/[A-Za-z]{2}/.test(text);return [ja?'日语':zh?'中文（初步）':'',en?'英语':''].filter(Boolean).join(' / ')||'未识别'}
+
+function removeExample(grammarId,exampleId){const g=db.grammar.find(g=>g.id===grammarId);if(!g)return;g.exampleItems=normalizeExamples(g).filter(e=>e.id!==exampleId);syncExamples(g)}
+function normalizeExamples(g){
+  if(!Array.isArray(g.exampleItems))g.exampleItems=[{id:uid(),text:String(g.examples||''),translation:'',language:'',detectedText:''}];
+
+  g.exampleItems=g.exampleItems.map(e=>({id:e.id||uid(),text:String(e.text||''),translation:String(e.translation||''),language:String(e.language||''),detectedText:String(e.detectedText||'')}));
+  return g.exampleItems;
+}
+function syncExamples(g){g.examples=normalizeExamples(g).map(e=>[e.text,e.translation].filter(Boolean).join('\n')).join('\n\n')}
+function speechLanguage(text){return /[\u3040-\u30ff]/.test(text)?'ja':/[\u3400-\u9fff]/.test(text)?'zh-CN':'en'}
+function normalizeLanguage(language){return /^zh/.test(language)?'zh-CN':language}
+async function detectExample(id,exampleId){
+  const g=db.grammar.find(g=>g.id===id),example=g?.exampleItems.find(e=>e.id===exampleId);if(!example)return;
+  const text=example.text.trim();example.language=speechLanguage(text);example.detectedText=text;
+  if(!api.key||!text)return;
+  try{const data=await microsoft('detect',text.slice(0,5000));const current=db.grammar.find(g=>g.id===id)?.exampleItems.find(e=>e.id===exampleId);if(!current||current.text.trim()!==text)return;current.language=normalizeLanguage(data?.[0]?.language||speechLanguage(text));current.detectedText=text;persist()}catch{}
+}
+function blankExample(){return {id:uid(),text:'',translation:'',language:'',detectedText:''}}
+function blankRow(){return {id:uid(),title:'',tag:'',note:'',examples:'',exampleItems:[blankExample()]}}
+function focusCell(id,col=0,exampleId){const cells=$$('#grammarList [contenteditable]').filter(el=>el.closest('tr').dataset.id===id);const cell=exampleId?cells.find(el=>el.dataset.example===exampleId&&Number(el.dataset.col)===col):cells.find(el=>Number(el.dataset.col)===col);cell?.focus()}
+function addRow(focus=true){const row=blankRow();db.grammar.push(row);persist();$('#search').value='';renderGrammar();if(focus)focusCell(row.id,0);return row}
+function editorCell(field,value,col,id,exampleId,placeholder,label){return `<div contenteditable="true" role="textbox" aria-label="${esc(label)}" data-field="${field}" data-col="${col}" ${exampleId?`data-example="${esc(exampleId)}"`:''} data-placeholder="${placeholder}" spellcheck="true">${esc(value)}</div>`}
+function renderGrammar(){
+  const q=$('#search').value.toLowerCase();db.grammar.forEach(syncExamples);
+  const gs=db.grammar.filter(g=>fields.map(k=>g[k]||'').join(' ').toLowerCase().includes(q));
+  $('#grammarList').innerHTML=gs.length?gs.map(g=>{
+    const examples=normalizeExamples(g),displayExamples=examples.length?examples:[{empty:true}],count=displayExamples.length+1,name=grammarLabel(g);
+    const rows=displayExamples.map((example,i)=>{
+      const label = `例句 ${i+1}，${name}`;
+      const metadata = i===0 ? `<td rowspan="${count}" class="grammar-meta"><div class="grammar-title-cell"><span class="grammar-grip" draggable="true" title="拖动调整顺序" aria-hidden="true">⠿</span>${editorCell('title',g.title,0,g.id,null,'语法名称','语法名称')}</div></td>${grammarLinksCell(g,count)}` : '';
+      const content = example.empty ? '<span class="no-examples">还没有例句</span>' : `<div class="compact-example">
+        <span aria-hidden="true">・</span>${editorCell('text',example.text,2,g.id,example.id,'输入例句…',label)}
+        <button type="button" data-delete-example="${esc(example.id)}" aria-label="删除${esc(label)}">×</button></div>`;
+      const audio = example.empty ? '—' : `<button type="button" data-pronounce="${esc(example.id)}" data-kind="text" aria-label="朗读${esc(label)}">◖))</button>`;
+      return `<tr id="${i===0?'grammar-'+esc(g.id):'example-'+esc(example.id)}" data-id="${esc(g.id)}" class="${i===0?'grammar-start':''}">${metadata}<td class="example-cell">${content}</td><td class="pronunciation-cell">${audio}</td></tr>`;
+    }).join('');
+    return rows+`<tr class="add-example-row" data-id="${esc(g.id)}"><td colspan="2"><button data-add-example="${esc(g.id)}">＋ 添加例句</button></td></tr>`
+  }).join(''):`<tr><td colspan="4" class="empty">${q?'没有匹配记录':'点击「添加语法」开始记录。'}</td></tr>`;
+  bindGrammarLinks();
+  $$('#grammarList [contenteditable]').forEach(cell=>{
+    const id=cell.closest('tr').dataset.id;
+    cell.oninput=()=>{const g=db.grammar.find(g=>g.id===id);if(cell.dataset.example){const e=g.exampleItems.find(e=>e.id===cell.dataset.example);e[cell.dataset.field]=cell.innerText.replace(/\r/g,'');if(cell.dataset.field==='text'){e.language=speechLanguage(e.text);e.detectedText=e.text.trim()}syncExamples(g)}else g[cell.dataset.field]=cell.innerText.replace(/\r/g,'');persist()};
+    cell.onblur=()=>{if(cell.dataset.example&&cell.dataset.field==='text')detectExample(id,cell.dataset.example)};
+    cell.onpaste=e=>pasteCells(e,id,Number(cell.dataset.col),cell.dataset.example);
+    cell.onkeydown=e=>{if(e.isComposing)return;if(e.key==='Tab'){e.preventDefault();const all=$$('#grammarList [contenteditable]'),i=all.indexOf(cell),next=all[i+(e.shiftKey?-1:1)];if(next)next.focus();else if(!e.shiftKey)addRow()}if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(cell.dataset.example){const g=db.grammar.find(g=>g.id===id),i=g.exampleItems.findIndex(e=>e.id===cell.dataset.example);if(!g.exampleItems[i+1]){g.exampleItems.push(blankExample());syncExamples(g);persist();renderGrammar()}focusCell(id,Number(cell.dataset.col),g.exampleItems[i+1].id)}else{const next=cell.closest('tr').querySelector('.example-cell [contenteditable]');next?.focus()}}};
+  });
+  $$('#grammarList [data-add-example]').forEach(button=>button.onclick=()=>{const g=db.grammar.find(g=>g.id===button.dataset.addExample),e=blankExample();g.exampleItems.push(e);syncExamples(g);persist();renderGrammar();focusCell(g.id,2,e.id)});
+  $$('#grammarList [data-delete-example]').forEach(button=>button.onclick=()=>{const id=button.closest('tr').dataset.id;if(!confirm('删除这条例句及其翻译？'))return;removeExample(id,button.dataset.deleteExample);persist();renderGrammar();toast('例句已删除')});
+  $$('#grammarList [data-pronounce]').forEach(button=>button.onclick=async()=>{const id=button.closest('tr').dataset.id,g=db.grammar.find(g=>g.id===id),e=g.exampleItems.find(e=>e.id===button.dataset.pronounce),kind=button.dataset.kind,text=e[kind].trim();if(!text){toast(kind==='text'?'请先填写这条例句':'请先填写这条翻译');return}button.disabled=true;try{if(kind==='text'){if(e.detectedText!==text||!e.language)await detectExample(id,e.id);speak(text,e.language||speechLanguage(text))}else speak(text,speechLanguage(text))}finally{button.disabled=false}});
+  $$('#grammarList [draggable]').forEach(handle=>{const id=handle.closest('tr').dataset.id;handle.ondragstart=e=>{dragId=id;e.dataTransfer.setData('text/plain',id);$$('#grammarList tr[data-id]').filter(tr=>tr.dataset.id===id).forEach(tr=>tr.classList.add('dragging'))};handle.ondragend=()=>{dragId=null;$$('#grammarList .dragging').forEach(tr=>tr.classList.remove('dragging'))}});
+  $$('#grammarList tr[data-id]').forEach(tr=>{tr.ondragover=e=>e.preventDefault();tr.ondrop=e=>{e.preventDefault();const id=tr.dataset.id;if(!dragId||dragId===id)return;const a=db.grammar.findIndex(g=>g.id===dragId),b=db.grammar.findIndex(g=>g.id===id);db.grammar.splice(b,0,db.grammar.splice(a,1)[0]);persist();renderGrammar()}});
+}
+function parseTSV(text){const rows=[[]];let field='',quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(c==='"'){if(quoted&&text[i+1]==='"'){field+='"';i++}else if(quoted||field==='')quoted=!quoted;else field+=c}else if(!quoted&&(c==='\t'||c==='\n'||c==='\r')){rows.at(-1).push(field);field='';if(c!=='\t'){if(c==='\r'&&text[i+1]==='\n')i++;rows.push([])}}else field+=c}rows.at(-1).push(field);if(rows.length>1&&rows.at(-1).length===1&&rows.at(-1)[0]==='')rows.pop();return rows}
+function pasteCells(event,id,col,exampleId){
+  event.preventDefault();const text=event.clipboardData.getData('text/plain');
+  // A plain sentence stays within the selected cell and keeps normal insertion behavior.
+  if(!/[\t\r\n]/.test(text)){const selection=window.getSelection(),range=selection?.rangeCount?selection.getRangeAt(0):null;if(range){range.deleteContents();const node=document.createTextNode(text);range.insertNode(node);range.setStartAfter(node);range.collapse(true);selection.removeAllRanges();selection.addRange(range);event.currentTarget.dispatchEvent(new Event('input',{bubbles:true}))}return}
+  const matrix=parseTSV(text).slice(0,1000),start=db.grammar.findIndex(g=>g.id===id),changed=[];
+  let current=db.grammar[start];normalizeExamples(current);
+  if(col>=2){let index=Math.max(0,current.exampleItems.findIndex(e=>e.id===exampleId));matrix.forEach((values,r)=>{while(current.exampleItems.length<=index+r)current.exampleItems.push(blankExample());const e=current.exampleItems[index+r];if(col===2){e.text=values[0]||'';}else e.translation=values[0]||'';e.language=speechLanguage(e.text);e.detectedText=e.text.trim();changed.push([current.id,e.id])});syncExamples(current)}
+  else{let offset=0;matrix.forEach((values,r)=>{const continuation=r>0&&col===0&&values.length>=3&&values.slice(0,2).every(v=>!v.trim());if(r>0&&!continuation){offset++;while(db.grammar.length<=start+offset)db.grammar.push(blankRow());current=db.grammar[start+offset];normalizeExamples(current)}if(continuation||!current.exampleItems.length)current.exampleItems.push(blankExample());const e=continuation?current.exampleItems.at(-1):current.exampleItems[0];values.forEach((value,c)=>{const target=col+c;if(target<2)current[fields[target]]=value;else if(target===2)e.text=value;});e.language=speechLanguage(e.text);e.detectedText=e.text.trim();syncExamples(current);changed.push([current.id,e.id])})}
+  persist();renderGrammar();focusCell(id,col,exampleId);changed.forEach(args=>detectExample(...args));
+}
+$('#newGrammar').onclick=()=>addRow();$('#search').oninput=renderGrammar;
+$('#saveExample').onclick=()=>{const text=$('#input').value.trim();if(!text){toast('请先输入例句');return}const row=blankRow();row.exampleItems[0].text=text;row.exampleItems[0].language=source;row.exampleItems[0].detectedText=text;syncExamples(row);db.grammar.push(row);persist();view('grammar');focusCell(row.id,0);toast('例句已加入新语法，可直接填写名称')};
+
+function renderWords(){$('#wordList').innerHTML=db.words.length?db.words.map(w=>`<article class="word-card"><div><h3>${esc(w.text)}</h3><p>${esc(w.meaning)}</p></div><button data-word-delete="${esc(w.id)}">移除</button></article>`).join(''):'<div class="empty">还没有收藏单词。去翻译页面选中一个词，开始积累吧。</div>';$$('[data-word-delete]').forEach(b=>b.onclick=()=>{db.words=db.words.filter(w=>w.id!==b.dataset.wordDelete);persist();renderWords()})}
+async function lookup(text,lang){if(!text||text.length>100)return;const version=++lookupRevision;lookupRecord=null;$('#saveWord').disabled=true;$('#lookupWord').textContent=text;$('#lookupResult').textContent='查询中…';if(!$('#lookup').open)$('#lookup').showModal();try{const meaning=await translate(text,lang,lang==='zh-CN'?'en':'zh-CN');if(version!==lookupRevision)return;lookupRecord={id:uid(),text,meaning,lang};$('#lookupResult').textContent=meaning;$('#saveWord').disabled=false}catch(e){if(version===lookupRevision)$('#lookupResult').textContent=e.message}}
+document.addEventListener('mouseup',e=>{if(!e.target.closest('.translation'))return;let text=window.getSelection().toString().trim(),lang=source;if(e.target===$('#input'))text=$('#input').value.slice($('#input').selectionStart,$('#input').selectionEnd).trim();const output=e.target.closest('.output');if(output)lang=output.id.slice(4);if(text)setTimeout(()=>lookup(text,lang),0)});$('#closeLookup').onclick=()=>$('#lookup').close();$('#lookup').addEventListener('close',()=>lookupRevision++);$('#saveWord').onclick=()=>{if(!lookupRecord)return;if(db.words.some(w=>w.text===lookupRecord.text)){toast('这个单词已经收藏');return}db.words.unshift(lookupRecord);persist();renderWords();$('#lookup').close();toast('已加入生词收藏')};
+$('#export').onclick=()=>{const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='lingua-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};$('#import').onclick=()=>$('#importFile').click();$('#importFile').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>5000000)throw Error();const value=JSON.parse(await file.text());if(!Array.isArray(value.grammar)||!Array.isArray(value.words)||value.grammar.some(g=>typeof g.title!=='string')||value.words.some(w=>typeof w.text!=='string'||typeof w.meaning!=='string'))throw Error();const importedIds=new Map(value.grammar.map(g=>[g,uid()]));const linkMap=new Map(value.grammar.map(g=>[g.id,importedIds.get(g)]));db.grammar.push(...value.grammar.map(g=>({id:importedIds.get(g),linkedIds:Array.isArray(g.linkedIds)?g.linkedIds.map(id=>linkMap.get(id)).filter(Boolean):[],title:g.title,tag:String(g.tag||''),note:String(g.note||''),examples:String(g.examples||''),exampleItems:Array.isArray(g.exampleItems)?g.exampleItems.map(e=>({id:uid(),text:String(e.text||''),translation:String(e.translation||''),language:'',detectedText:''})):undefined})));db.words.push(...value.words.map(w=>({id:uid(),text:w.text,meaning:w.meaning,lang:String(w.lang||'en')})));persist();renderGrammar();toast('备份已合并导入')}catch{toast('文件无效，请选择语间导出的 JSON 备份')}e.target.value=''};function linkedGrammars(grammar){
+  const ids=new Set(grammar.linkedIds||[]);
+  return db.grammar.filter(item=>ids.has(item.id));
+}
+function grammarLinksCell(grammar,count){
+  const links=linkedGrammars(grammar).map(item=>`<li><a href="#grammar-${esc(item.id)}" data-jump-grammar="${esc(item.id)}">${esc(grammarLabel(item))}</a><button type="button" data-unlink-grammar="${esc(item.id)}" aria-label="解除关联 ${esc(grammarLabel(item))}">×</button></li>`).join('');
+  return `<td rowspan="${count}" class="grammar-links"><ul>${links}</ul><button type="button" data-link-grammar="${esc(grammar.id)}">＋ 关联语法</button></td>`;
+}
+function grammarLabel(item){return item.title.trim()||'未命名语法'}
+function setGrammarLink(a,b,linked){
+  if(!a||!b||a===b)return;
+  for(const [item,other] of [[a,b],[b,a]]){
+    const ids=new Set(item.linkedIds||[]);
+    if(linked)ids.add(other.id);else ids.delete(other.id);
+    item.linkedIds=[...ids];
+  }
+}
+function jumpToGrammar(id){
+  $('#search').value='';
+  renderGrammar();
+  const row=$$('#grammarList .grammar-start').find(item=>item.dataset.id===id);
+  if(!row)return;
+  row.classList.add('grammar-highlight');
+  row.scrollIntoView({block:'center',inline:'nearest'});
+  row.querySelector('[data-field="title"]').focus({preventScroll:true});
+  setTimeout(()=>row.classList.remove('grammar-highlight'),1800);
+}
+function chooseGrammar(title, candidates, onSelect, help=''){
+  const dialog=$('#grammarLinkDialog');
+  const search=$('#grammarLinkSearch');
+  const results=$('#grammarLinkResults');
+  $('#grammarLinkTitle').textContent=title;
+  $('#grammarPickerHelp').textContent=help;
+  function showMatches(){
+    const query=search.value.trim().toLowerCase();
+    results.replaceChildren();
+    for(const item of candidates){
+      if(!grammarLabel(item).toLowerCase().includes(query))continue;
+      const option=document.createElement('button');
+      option.type='button';
+      option.textContent=grammarLabel(item);
+      const example=item.exampleItems?.find(entry=>entry.text.trim());
+      if(example){
+        const detail=document.createElement('small');
+        detail.textContent=example.text.trim().slice(0,100);
+        option.append(detail);
+      }
+      option.onclick=()=>onSelect(item);
+      results.append(option);
+    }
+    if(!results.childElementCount)results.textContent='没有匹配的语法。';
+  }
+  search.value='';
+  search.oninput=showMatches;
+  showMatches();
+  if(!dialog.open)dialog.showModal();
+  search.focus();
+}
+function bindGrammarLinks(){
+  for(const button of $$('[data-link-grammar]'))button.onclick=()=>{
+    const source=db.grammar.find(item=>item.id===button.dataset.linkGrammar);
+    const candidates=db.grammar.filter(item=>item!==source&&!(source.linkedIds||[]).includes(item.id));
+    chooseGrammar('关联语法',candidates,target=>{
+      setGrammarLink(source,target,true);
+      persist();
+      $('#grammarLinkDialog').close();
+      jumpToGrammar(target.id);
+    });
+  };
+  for(const link of $$('[data-jump-grammar]'))link.onclick=event=>{event.preventDefault();jumpToGrammar(link.dataset.jumpGrammar)};
+  for(const button of $$('[data-unlink-grammar]'))button.onclick=()=>{
+    const source=db.grammar.find(item=>item.id===button.closest('tr').dataset.id);
+    const target=db.grammar.find(item=>item.id===button.dataset.unlinkGrammar);
+    setGrammarLink(source,target,false);persist();renderGrammar();
+  };
+}
+$('#closeGrammarLink').onclick=()=>$('#grammarLinkDialog').close();
+
+updateTargets();renderGrammar();renderWords();
+
+let voiceSettings={en:'auto:en-US','zh-CN':'auto:zh-CN',ja:'auto:ja-JP',rate:1,pitch:1};
+try{const saved=JSON.parse(localStorage.getItem('lingua-voices'));if(saved&&typeof saved==='object')voiceSettings={...voiceSettings,...saved}}catch{}
+voiceSettings.rate=Math.min(1.5,Math.max(.5,Number(voiceSettings.rate)||1));voiceSettings.pitch=Math.min(1.5,Math.max(.5,Number(voiceSettings.pitch)||1));
+const defaultAccents={en:[['en-US','美式英语'],['en-GB','英式英语'],['en-AU','澳式英语']],'zh-CN':[['zh-CN','普通话'],['zh-TW','台湾国语'],['zh-HK','香港中文']],ja:[['ja-JP','日语']]};
+function availableVoices(){return window.speechSynthesis?.getVoices()||[]}
+function saveVoiceSettings(){try{localStorage.setItem('lingua-voices',JSON.stringify(voiceSettings));$('#voiceStatus').textContent='发音偏好已保存，适用于翻译与所有例句。'}catch{$('#voiceStatus').textContent='偏好仅在当前页面有效，浏览器禁止保存。'}}
+function refreshVoices(){const voices=availableVoices();Object.keys(langs).forEach(lang=>{const select=$('[data-voice-select="'+lang+'"]');if(!select)return;const matches=voices.filter(v=>v.lang.toLowerCase().startsWith(lang==='zh-CN'?'zh':lang));const options=defaultAccents[lang].map(([code,name])=>`<option value="auto:${code}">自动匹配 · ${name}</option>`).join('');select.innerHTML=options+(matches.length?'<optgroup label="当前浏览器可用声音">'+matches.map(v=>`<option value="${esc('voice:'+v.voiceURI)}">${esc(v.name+' · '+v.lang+(v.localService?' · 本机':' · 在线'))}</option>`).join('')+'</optgroup>':'');const desired=voiceSettings[lang];select.value=desired;if(!select.value)select.value=defaultAccents[lang].map(v=>'auto:'+v[0])[0];select.onchange=()=>{voiceSettings[lang]=select.value;saveVoiceSettings()}});$('#voiceCount').textContent=voices.length?'浏览器已提供 '+voices.length+' 个声音，以下按语言列出。':'浏览器暂未提供声音列表。可使用自动匹配，或点击重新加载。'}
+function speak(text,lang){if(!window.speechSynthesis){toast('当前浏览器不支持朗读');return}if(!text.trim()){toast('请先输入需要朗读的文字');return}const synth=window.speechSynthesis;lang=normalizeLanguage(lang);const setting=voiceSettings[lang]||('auto:'+lang),voices=availableVoices();let preferred=setting.startsWith('voice:')?voices.find(v=>v.voiceURI===setting.slice(6)):null;const code=setting.startsWith('auto:')?setting.slice(5):preferred?.lang||({en:'en-US',ja:'ja-JP','zh-CN':'zh-CN'}[lang]||lang);if(!preferred)preferred=voices.find(v=>v.lang.toLowerCase()===code.toLowerCase());synth.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=preferred?.lang||code;if(preferred)u.voice=preferred;u.rate=voiceSettings.rate;u.pitch=voiceSettings.pitch;u.onerror=e=>{if(!['interrupted','canceled'].includes(e.error))toast('无法播放这个声音，请到发音设置选择其他声音')};synth.speak(u)}
+$$('[data-voice-test]').forEach(b=>b.onclick=()=>{const lang=b.dataset.voiceTest;speak({en:'Small steps lead to big changes.','zh-CN':'每天进步一点点，学习就会有新的收获。',ja:'毎日少しずつ、一緒に勉強しましょう。'}[lang],lang)});
+['rate','pitch'].forEach(key=>{const input=$('#voice-'+key),output=$('#voice-'+key+'-value');input.value=voiceSettings[key];output.textContent=Number(input.value).toFixed(1)+(key==='rate'?' 倍':'');input.oninput=()=>{voiceSettings[key]=Number(input.value);output.textContent=Number(input.value).toFixed(1)+(key==='rate'?' 倍':'');saveVoiceSettings()}});
+$('#reloadVoices').onclick=refreshVoices;$('#stopVoice').onclick=()=>window.speechSynthesis?.cancel();$('#resetVoices').onclick=()=>{voiceSettings={en:'auto:en-US','zh-CN':'auto:zh-CN',ja:'auto:ja-JP',rate:1,pitch:1};['rate','pitch'].forEach(key=>{$('#voice-'+key).value=1;$('#voice-'+key+'-value').textContent=key==='rate'?'1.0 倍':'1.0'});saveVoiceSettings();refreshVoices()};
+window.speechSynthesis?.addEventListener('voiceschanged',refreshVoices);refreshVoices();
+
+function moveGrammarAfter(moving,target){
+  if(moving===target||!db.grammar.includes(moving)||!db.grammar.includes(target))return;
+  db.grammar.splice(db.grammar.indexOf(moving),1);
+  db.grammar.splice(db.grammar.indexOf(target)+1,0,moving);
+}
+$('#showMoveGrammar').onclick=()=>{
+  if(db.grammar.length<2){toast('至少需要两条语法才能调整顺序');return}
+  chooseGrammar('选择要移动的语法',db.grammar,moving=>{
+    chooseGrammar('选择放在哪条语法下面',db.grammar.filter(item=>item!==moving),target=>{
+      moveGrammarAfter(moving,target);
+      persist();
+      $('#grammarLinkDialog').close();
+      jumpToGrammar(moving.id);
+      toast('已移到「'+grammarLabel(target)+'」下面');
+    },'正在移动「'+grammarLabel(moving)+'」');
+  });
+};

@@ -1,0 +1,58 @@
+/* The grammar page has one scroll owner: its table viewport. */
+body.grammar-workspace{height:100dvh;overflow:hidden}
+.grammar-workspace aside{width:172px;padding:26px 14px}
+.grammar-workspace aside .brand{font-size:27px}
+.grammar-workspace aside nav{margin-top:35px;gap:8px}
+.grammar-workspace aside nav button{font-size:12px;padding:12px}
+.grammar-workspace main{margin-left:172px;max-width:none;height:100dvh;padding:0 16px 12px;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.grammar-workspace header,.grammar-workspace footer{display:none}
+.grammar-workspace #grammar{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.grammar-workspace .heading{display:flex;align-items:center;gap:20px;flex:none;margin:14px 0 10px}
+.grammar-workspace .heading h1{font-size:21px;margin:0;white-space:nowrap}
+.grammar-workspace .heading p{font-size:11px;margin:0}
+.grammar-workspace .list-tools{flex:none;margin:0 0 8px;gap:6px}
+.grammar-workspace .list-tools input{padding:9px 12px;font-size:12px}
+.grammar-workspace .list-tools button{font-size:11px;padding:8px 10px}
+.grammar-workspace .sheet-scroll{flex:1;min-height:0;max-height:none;width:100%;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.grammar-workspace #grammar>.service-note{flex:none;font-size:10px;margin:6px 0 0;line-height:1.5}
+.move-controls{flex:none;display:flex;align-items:center;gap:7px;margin:0 0 10px;font-size:11px;color:#668da8;flex-wrap:wrap}
+.move-controls input{width:74px;padding:6px 8px;border-radius:5px;background:#fff;font-size:12px}
+.move-controls button{background:#e3f1fc;color:#247bb5;font-size:11px;padding:7px 15px}
+.move-controls small{font-size:9px;color:#8cabbf;margin-left:5px}
+.grammar-workspace #grammarTable{min-width:740px}
+@media(max-width:900px){.grammar-workspace aside{width:138px;padding:25px 10px}.grammar-workspace main{margin-left:138px;padding-left:10px;padding-right:10px}.grammar-workspace .heading{gap:12px}.grammar-workspace .heading p{font-size:10px}.grammar-workspace aside nav button{font-size:11px;padding:10px 7px}.grammar-workspace .list-tools #saveState{display:none}}
+@media(max-width:650px){body.grammar-workspace{display:flex;flex-direction:column}.grammar-workspace aside{position:static;width:100%;padding:9px 12px;flex:none}.grammar-workspace aside .brand{font-size:22px}.grammar-workspace aside nav{margin:0;gap:1px;max-width:280px}.grammar-workspace aside nav button{font-size:9px;padding:7px}.grammar-workspace main{margin:0;width:100%;height:auto;flex:1;min-height:0;padding:0 8px 8px}.grammar-workspace .heading{margin:8px 0;gap:8px}.grammar-workspace .heading h1{font-size:18px}.grammar-workspace .heading p{display:none}.grammar-workspace #search{min-width:130px}.grammar-workspace .list-tools{gap:2px}.grammar-workspace .list-tools button{font-size:10px;padding:7px 5px}.move-controls{gap:5px;margin-bottom:6px}.move-controls input{width:56px}.move-controls small{display:none}.grammar-workspace #grammar>.service-note{font-size:9px}}
+
+/* Stable shared shell, independent of the selected view. */
+body{margin:0;height:100dvh;overflow:hidden}aside{width:172px;padding:26px 14px}.brand{font-size:27px}aside nav{margin-top:35px;gap:8px}aside nav button{font-size:12px;padding:12px}main{margin-left:172px;max-width:none;height:100dvh;padding:0 16px 12px;display:flex;flex-direction:column;overflow:hidden;min-width:0}main>header,main>footer{display:none}main>.view{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}main>#grammar{overflow:hidden}.translate-top{margin-top:14px}#translate{padding-bottom:12px}#voice,#settings,#words{padding:0 10px 20px}.grammar-workspace #grammarTable th:first-child{width:7%}.grammar-workspace #grammarTable th:nth-child(2){width:17%}.grammar-workspace #grammarTable th:nth-child(3){width:23%}.grammar-workspace #grammarTable th:nth-child(4){width:42%}.grammar-workspace #grammarTable th:nth-child(5){width:11%}#grammarTable .row-number span{white-space:nowrap}.example-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}.example-heading .example-index{margin:0}.example-heading button{font-size:10px;color:#8aa6b9;padding:3px 7px}.example-heading button:hover{color:#b95353;background:#fff1f1}.no-examples{font-size:11px;color:#9bb2c2}#moveDialog label{font-size:12px;color:#698ba4}#moveDialog p{font-size:12px}
+@media(max-width:900px){aside{width:138px;padding:25px 10px}main{margin-left:138px;padding-left:10px;padding-right:10px}aside nav button{font-size:11px;padding:10px 7px}}
+@media(max-width:650px){body{display:flex;flex-direction:column}aside{position:static;width:100%;padding:9px 12px;flex:none}aside .brand{font-size:22px}aside nav{margin:0;gap:1px;max-width:280px}aside nav button{font-size:9px;padding:7px}main{margin:0;width:100%;height:auto;flex:1;min-height:0;padding:0 8px 8px}#voice,#settings,#words{padding:0 4px 14px}}
+#grammarTable .grammar-links{padding:8px 10px}
+.grammar-links ul{list-style:none;margin:0;padding:0}
+.grammar-links li{display:flex;align-items:center;gap:3px}
+.grammar-links a{color:#1875ab;overflow-wrap:anywhere}
+.grammar-links button{font-size:11px;padding:4px 6px;color:#287aa9}
+#grammarTable .grammar-meta [contenteditable]{min-height:0;padding:10px}
+#grammarTable .example-cell,#grammarTable .pronunciation-cell{padding:3px 8px;vertical-align:middle}
+#grammarTable .compact-example{display:flex;align-items:baseline;gap:4px}
+#grammarTable .compact-example [contenteditable]{flex:1;min-width:0;min-height:0;padding:3px 4px;margin:0;font-size:13px;line-height:1.45}
+.compact-example button{padding:3px 6px;color:#6b879a}
+.compact-example button:hover{color:#a52d2d;background:#fff0f0}
+#grammarTable .pronunciation-cell button{padding:3px 4px}
+#grammarTable .add-example-row td{padding:0 8px}
+#grammarTable .add-example-row button{padding:4px 6px}
+#grammarTable .grammar-start:not(:first-child)>*{border-top-width:3px}
+#grammarTable .grammar-highlight>*{background:#e1f2ff}
+#grammarLinkResults{display:grid;max-height:40vh;overflow:auto}
+#grammarLinkResults button{text-align:left;padding:8px}
+.grammar-workspace #grammarTable th:nth-child(1){width:21%}
+.grammar-workspace #grammarTable th:nth-child(2){width:23%}
+.grammar-workspace #grammarTable th:nth-child(3){width:47%}
+.grammar-workspace #grammarTable th:nth-child(4){width:9%}
+.grammar-title-cell{display:flex;align-items:baseline;gap:4px;padding-left:8px}
+.grammar-title-cell [contenteditable]{flex:1;min-width:0}
+.grammar-grip{cursor:grab;color:#7294a9;padding:4px 2px}
+#grammarTable .example-cell{padding:6px 9px}
+#grammarTable .compact-example [contenteditable]{font-size:15px;line-height:1.65}
+#grammarLinkResults button small{display:block;color:#668da8;margin-top:3px;overflow-wrap:anywhere}
+#grammarPickerHelp:empty{display:none}
