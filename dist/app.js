@@ -450,7 +450,31 @@ $('#showMoveGrammar').onclick=()=>{
   saveButton.textContent = '保存到云端';
   loadButton.type = 'button';
   loadButton.textContent = '从云端加载';
-  exportButton.after(saveButton, loadButton);
+  const backupKey = 'lingua-before-cloud-load';
+  const backupButton = document.createElement('button');
+  backupButton.type = 'button';
+  backupButton.textContent = '下载加载前备份';
+  backupButton.hidden = true;
+  exportButton.after(saveButton, loadButton, backupButton);
+
+  try {
+    backupButton.hidden = !localStorage.getItem(backupKey);
+  } catch {}
+
+  backupButton.onclick = () => {
+    try {
+      const snapshot = JSON.parse(localStorage.getItem(backupKey));
+      if (!snapshot?.data) throw new Error('此浏览器没有加载前备份');
+      const url = URL.createObjectURL(new Blob([JSON.stringify(snapshot.data, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'lingua-before-cloud-load-' + snapshot.createdAt.slice(0, 10) + '.json';
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      alert(error.message);
+    }
+  };
 
   // 第一次保存允许创建文件。已有文件须先加载，再修改和保存。
   let cloudVersion = null;
@@ -461,7 +485,7 @@ $('#showMoveGrammar').onclick=()=>{
       throw new Error('请先用有 owner 角色的 GitHub 账号登录');
     }
     if (response.status === 409) {
-      throw new Error('云端已有记录或已更新。请先导出本地备份，再从云端加载');
+      throw new Error('本次没有保存到云端，本地记录仍在。云端已有记录或版本已变化。请先导出备份，再决定是否加载云端记录。');
     }
 
     const result = await response.json().catch(() => null);
@@ -509,9 +533,26 @@ $('#showMoveGrammar').onclick=()=>{
     if (!Array.isArray(grammar) || !Array.isArray(words)) {
       throw new Error('云端记录格式不正确');
     }
-    if (!confirm('加载会替换当前浏览器里的语法和生词。确定加载吗？')) {
+    if (JSON.stringify([grammar, words]) === JSON.stringify([db.grammar, db.words])) {
+      cloudVersion = result.version;
+      alert('本地和云端记录一致。');
       return;
     }
+    const count = data => {
+      const examples = data.grammar.reduce((sum, item) => sum + (Array.isArray(item.exampleItems)
+        ? item.exampleItems.filter(example => example.text?.trim()).length
+        : Number(Boolean(item.examples?.trim()))), 0);
+      return data.grammar.length + ' 条语法、' + examples + ' 条例句、' + data.words.length + ' 个生词';
+    };
+    if (!confirm('当前浏览器：' + count(db) + '\n云端：' + count(result.data) +
+      '\n\n继续会用云端记录替换本地记录，并保留一份加载前备份。确定加载吗？')) return;
+
+    try {
+      localStorage.setItem(backupKey, JSON.stringify({ createdAt: new Date().toISOString(), data: db }));
+    } catch {
+      throw new Error('无法保存加载前备份，本次没有替换本地记录。请先导出备份。');
+    }
+    backupButton.hidden = false;
 
     const previous = db;
     db = { grammar, words };
