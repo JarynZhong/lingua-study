@@ -103,6 +103,8 @@ $('#saveExample').onclick=()=>{const text=$('#input').value.trim();if(!text){toa
 
 const saveSentenceButton = document.createElement('button');
 saveSentenceButton.type = 'button';
+saveSentenceButton.className = 'primary';
+saveSentenceButton.style.cssText = 'font-size:14px;font-weight:600;padding:10px 15px;color:white;background:#216a99;border:1px solid #216a99';
 saveSentenceButton.textContent = '☆ 收藏三语句子';
 $('#saveExample').after(saveSentenceButton);
 saveSentenceButton.onclick = () => {
@@ -159,15 +161,14 @@ saveSentenceButton.onclick = () => {
 const githubLogin = document.createElement('a');
 githubLogin.href = '/.auth/login/github';
 githubLogin.textContent = '使用 GitHub 登录';
-githubLogin.className = 'primary';
-githubLogin.style.cssText = 'display:inline-block;padding:8px 12px;border-radius:8px;text-decoration:none';
+githubLogin.style.cssText = 'font-size:12px;color:#476578;text-underline-offset:3px';
 $('.language-options').after(githubLogin);
 fetch('/.auth/me', { cache: 'no-store' })
   .then(response => response.ok ? response.json() : null)
   .then(result => {
     const user = result?.clientPrincipal;
     if (user?.identityProvider !== 'github') return;
-    githubLogin.textContent = '已登录 GitHub · 退出';
+    githubLogin.textContent = '退出 GitHub';
     githubLogin.href = '/.auth/logout';
   })
   .catch(() => {});
