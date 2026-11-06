@@ -19,8 +19,14 @@ async function translate(text,from,to,config=api){if(from===to)return text;const
 $('#testApi').onclick=async()=>{const button=$('#testApi');button.disabled=true;$('#apiStatus').textContent='正在测试…';try{const result=await translate('Hello','en','zh-CN',formConfig());$('#apiStatus').textContent='连接成功：Hello → '+result+'。请保存配置。'}catch(e){$('#apiStatus').textContent=e.message}finally{button.disabled=false}};
 function updateTargets(){$$('[data-target]').forEach(el=>el.hidden=el.dataset.target===source)}
 $$('[name="source"]').forEach(box=>box.onchange=()=>{source=box.value;$$('[name="source"]').forEach(el=>el.checked=el.value===source);updateTargets();schedule()});
+let completedTranslation = null;
 function schedule(){revision++;clearTimeout(timer);$('#count').textContent=$('#input').value.length+' / 5000';timer=setTimeout(runTranslation,700)}
-async function runTranslation(){const version=++revision,text=$('#input').value.trim(),from=source;updateTargets();if(!text){Object.keys(langs).forEach(k=>$('#out-'+k).textContent='译文将在这里呈现');$('#status').textContent='等待输入';return}if(!api.key){$('#status').textContent='请先配置翻译 API';Object.keys(langs).filter(k=>k!==from).forEach(k=>$('#out-'+k).textContent='在「API 设置」填写密钥后开始翻译');return}$('#status').textContent='正在翻译…';const targets=Object.keys(langs).filter(k=>k!==from);targets.forEach(k=>$('#out-'+k).textContent='翻译中…');const results=await Promise.allSettled(targets.map(async k=>{const value=await translate(text,from,k);if(version===revision)$('#out-'+k).textContent=value}));if(version!==revision)return;results.forEach((r,i)=>{if(r.status==='rejected')$('#out-'+targets[i]).textContent=r.reason.message});$('#status').textContent=results.some(r=>r.status==='rejected')?'翻译失败 · 可点击重新翻译':'翻译完成'}
+async function runTranslation(){const version=++revision,text=$('#input').value.trim(),from=source;completedTranslation=null;updateTargets();if(!text){Object.keys(langs).forEach(k=>$('#out-'+k).textContent='译文将在这里呈现');$('#status').textContent='等待输入';return}if(!api.key){$('#status').textContent='请先配置翻译 API';Object.keys(langs).filter(k=>k!==from).forEach(k=>$('#out-'+k).textContent='在「API 设置」填写密钥后开始翻译');return}$('#status').textContent='正在翻译…';const targets=Object.keys(langs).filter(k=>k!==from);targets.forEach(k=>$('#out-'+k).textContent='翻译中…');const results=await Promise.allSettled(targets.map(async k=>{const value=await translate(text,from,k);if(version===revision)$('#out-'+k).textContent=value}));if(version!==revision)return;results.forEach((r,i)=>{if(r.status==='rejected')$('#out-'+targets[i]).textContent=r.reason.message});const failed=results.some(r=>r.status==='rejected');
+  if(!failed){
+    const texts=Object.fromEntries(Object.keys(langs).map(lang=>[lang,lang===from?text:$('#out-'+lang).textContent]));
+    if(Object.values(texts).every(value=>value.trim()))completedTranslation={version,text,from,texts};
+  }
+  $('#status').textContent=failed?'翻译失败 · 可点击重新翻译':'翻译完成'}
 $('#input').oninput=schedule;$('#retry').onclick=()=>{clearTimeout(timer);runTranslation()};$('#clear').onclick=()=>{$('#input').value='';schedule()};
 $('#readInput').onclick=()=>speak($('#input').value,source);$$('[data-speak]').forEach(b=>b.onclick=()=>speak($('#out-'+b.dataset.speak).textContent,b.dataset.speak));
 $('#copy').onclick=async()=>{try{await navigator.clipboard.writeText(Object.keys(langs).filter(k=>k!==source).map(k=>langs[k]+'\n'+$('#out-'+k).textContent).join('\n\n'));toast('已复制两种译文')}catch{toast('请选中文字手动复制')}};
@@ -60,7 +66,7 @@ function renderGrammar(){
         <span aria-hidden="true">・</span>${editorCell('text',example.text,2,g.id,example.id,'输入例句…',label)}
         <button type="button" data-delete-example="${esc(example.id)}" aria-label="删除${esc(label)}">×</button></div>`;
       const audio = example.empty ? '—' : `<button type="button" data-pronounce="${esc(example.id)}" data-kind="text" aria-label="朗读${esc(label)}">◖))</button>`;
-      return `<tr id="${i===0?'grammar-'+esc(g.id):'example-'+esc(example.id)}" data-id="${esc(g.id)}" class="${i===0?'grammar-start':''}">${metadata}<td class="example-cell">${content}</td><td class="pronunciation-cell">${audio}</td></tr>`;
+      return `<tr id="${i===0?'grammar-'+esc(g.id):'example-'+esc(example.id)}" data-id="${esc(g.id)}" class="${i===0?'grammar-start':''}">${metadata}<td class="example-cell">${content}${example.translation ? `<details><summary>查看已保存译文</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;padding:6px 8px">${esc(example.translation)}</div></details>` : ''} </td><td class="pronunciation-cell">${audio}</td></tr>`;
     }).join('');
     return rows+`<tr class="add-example-row" data-id="${esc(g.id)}"><td colspan="2"><button data-add-example="${esc(g.id)}">＋ 添加例句</button></td></tr>`
   }).join(''):`<tr><td colspan="4" class="empty">${q?'没有匹配记录':'点击「添加语法」开始记录。'}</td></tr>`;
@@ -90,7 +96,76 @@ function pasteCells(event,id,col,exampleId){
   persist();renderGrammar();focusCell(id,col,exampleId);changed.forEach(args=>detectExample(...args));
 }
 $('#newGrammar').onclick=()=>addRow();$('#search').oninput=renderGrammar;
-$('#saveExample').onclick=()=>{const text=$('#input').value.trim();if(!text){toast('请先输入例句');return}const row=blankRow();row.exampleItems[0].text=text;row.exampleItems[0].language=source;row.exampleItems[0].detectedText=text;syncExamples(row);db.grammar.push(row);persist();view('grammar');focusCell(row.id,0);toast('例句已加入新语法，可直接填写名称')};
+const sentenceCollectionTag = 'lingua-sentence-collection';
+const defaultSentenceCollection = { title: '句子收藏（默认）' };
+
+$('#saveExample').textContent = '☆ 收藏三语句子';
+$('#saveExample').onclick = () => {
+  const snapshot = completedTranslation;
+  if (!snapshot || snapshot.version !== revision ||
+      snapshot.text !== $('#input').value.trim() || snapshot.from !== source) {
+    toast('请等当前句子的三语翻译完成后再收藏');
+    return;
+  }
+
+  const destinations = db.grammar.filter(row => row.tag !== sentenceCollectionTag);
+  chooseGrammar('选择收藏位置', [defaultSentenceCollection, ...destinations], destination => {
+    let row = destination;
+    let created = false;
+    if (destination === defaultSentenceCollection) {
+      row = db.grammar.find(item => item.tag === sentenceCollectionTag);
+      if (!row) {
+        row = blankRow();
+        row.title = '句子收藏';
+        row.tag = sentenceCollectionTag;
+        row.exampleItems = [];
+        db.grammar.push(row);
+        created = true;
+      }
+    }
+
+    const previous = row.exampleItems;
+    const previousExamples = row.examples;
+    const example = blankExample();
+    example.text = snapshot.text;
+    example.language = snapshot.from;
+    example.detectedText = snapshot.text;
+    example.translation = Object.entries(langs)
+      .map(([lang, label]) => label + '：' + snapshot.texts[lang])
+      .join('\n');
+
+    const entries = normalizeExamples(row).filter(item => item.text.trim() || item.translation.trim());
+    row.exampleItems = [...entries, example];
+    syncExamples(row);
+    if (!persist()) {
+      if (created) db.grammar.splice(db.grammar.indexOf(row), 1);
+      else {
+        row.exampleItems = previous;
+        row.examples = previousExamples;
+      }
+      return;
+    }
+
+    $('#grammarLinkDialog').close();
+    toast('已收藏到「' + grammarLabel(row) + '」');
+  }, '保存整句原文和三语译文');
+};
+
+const githubLogin = document.createElement('a');
+githubLogin.href = '/.auth/login/github';
+githubLogin.textContent = '使用 GitHub 登录';
+githubLogin.className = 'primary';
+githubLogin.style.cssText = 'display:inline-block;padding:8px 12px;border-radius:8px;text-decoration:none';
+$('.language-options').after(githubLogin);
+fetch('/.auth/me', { cache: 'no-store' })
+  .then(response => response.ok ? response.json() : null)
+  .then(result => {
+    const user = result?.clientPrincipal;
+    if (user?.identityProvider !== 'github') return;
+    githubLogin.textContent = '已登录 GitHub · 退出';
+    githubLogin.href = '/.auth/logout';
+  })
+  .catch(() => {});
 
 function renderWords(){$('#wordList').innerHTML=db.words.length?db.words.map(w=>`<article class="word-card"><div><h3>${esc(w.text)}</h3><p>${esc(w.meaning)}</p></div><button data-word-delete="${esc(w.id)}">移除</button></article>`).join(''):'<div class="empty">还没有收藏单词。去翻译页面选中一个词，开始积累吧。</div>';$$('[data-word-delete]').forEach(b=>b.onclick=()=>{db.words=db.words.filter(w=>w.id!==b.dataset.wordDelete);persist();renderWords()})}
 async function lookup(text,lang){if(!text||text.length>100)return;const version=++lookupRevision;lookupRecord=null;$('#saveWord').disabled=true;$('#lookupWord').textContent=text;$('#lookupResult').textContent='查询中…';if(!$('#lookup').open)$('#lookup').showModal();try{const meaning=await translate(text,lang,lang==='zh-CN'?'en':'zh-CN');if(version!==lookupRevision)return;lookupRecord={id:uid(),text,meaning,lang};$('#lookupResult').textContent=meaning;$('#saveWord').disabled=false}catch(e){if(version===lookupRevision)$('#lookupResult').textContent=e.message}}
