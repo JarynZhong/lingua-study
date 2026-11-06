@@ -205,3 +205,88 @@ $('#showMoveGrammar').onclick=()=>{
     },'正在移动「'+grammarLabel(moving)+'」');
   });
 };
+(() => {
+  const exportButton = document.querySelector('#export');
+  const saveButton = document.createElement('button');
+  const loadButton = document.createElement('button');
+
+  saveButton.type = 'button';
+  saveButton.textContent = '保存到云端';
+  loadButton.type = 'button';
+  loadButton.textContent = '从云端加载';
+  exportButton.after(saveButton, loadButton);
+
+  // 第一次保存允许创建文件。已有文件须先加载，再修改和保存。
+  let cloudVersion = null;
+
+  async function requestCloud(options) {
+    const response = await fetch('/api/study-data', options);
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('请先用有 owner 角色的 GitHub 账号登录');
+    }
+    if (response.status === 409) {
+      throw new Error('云端已有记录或已更新。请先导出本地备份，再从云端加载');
+    }
+
+    const result = await response.json().catch(() => null);
+    if (!response.ok || !result?.ok) {
+      throw new Error(result?.error || `云端请求失败（${response.status}）`);
+    }
+    return result;
+  }
+
+  async function run(action) {
+    saveButton.disabled = true;
+    loadButton.disabled = true;
+    try {
+      await action();
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      saveButton.disabled = false;
+      loadButton.disabled = false;
+    }
+  }
+
+  saveButton.onclick = () => run(async () => {
+    const result = await requestCloud({
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        data: { grammar: db.grammar, words: db.words },
+        version: cloudVersion
+      })
+    });
+
+    cloudVersion = result.version;
+    alert('已保存到云端');
+  });
+
+  loadButton.onclick = () => run(async () => {
+    const result = await requestCloud({ cache: 'no-store' });
+    if (result.data === null) {
+      alert('云端还没有记录。请先在有学习记录的设备上保存。');
+      return;
+    }
+
+    const { grammar, words } = result.data;
+    if (!Array.isArray(grammar) || !Array.isArray(words)) {
+      throw new Error('云端记录格式不正确');
+    }
+    if (!confirm('加载会替换当前浏览器里的语法和生词。确定加载吗？')) {
+      return;
+    }
+
+    const previous = db;
+    db = { grammar, words };
+    if (!persist()) {
+      db = previous;
+      throw new Error('浏览器保存失败，本地记录已恢复');
+    }
+
+    cloudVersion = result.version;
+    renderGrammar();
+    renderWords();
+    alert('已从云端加载');
+  });
+})();
