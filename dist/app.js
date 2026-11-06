@@ -154,10 +154,10 @@ function renderGrammar(){
       const label = `例句 ${i+1}，${name}`;
       const metadata = i===0 ? `<td rowspan="${count}" class="grammar-meta"><div class="grammar-title-cell"><span class="grammar-grip" draggable="true" title="拖动调整顺序" aria-hidden="true">⠿</span>${editorCell('title',g.title,0,g.id,null,'语法名称','语法名称')}</div></td>${grammarLinksCell(g,count)}` : '';
       const content = example.empty ? '<span class="no-examples">还没有例句</span>' : `<div class="compact-example">
-        <span aria-hidden="true">・</span>${editorCell('text',example.text,2,g.id,example.id,'输入例句…',label)}
+        <span draggable="true" data-example-drag="${esc(example.id)}" title="拖动调整例句顺序" aria-label="拖动调整例句顺序" style="cursor:grab;user-select:none">⠿</span><span aria-hidden="true">・</span>${editorCell('text',example.text,2,g.id,example.id,'输入例句…',label)}
         <button type="button" data-delete-example="${esc(example.id)}" aria-label="删除${esc(label)}">×</button></div>`;
       const audio = example.empty ? '—' : `<button type="button" data-pronounce="${esc(example.id)}" data-kind="text" aria-label="朗读${esc(label)}">◖))</button>`;
-      return `<tr id="${i===0?'grammar-'+esc(g.id):'example-'+esc(example.id)}" data-id="${esc(g.id)}" class="${i===0?'grammar-start':''}">${metadata}<td class="example-cell">${content}${example.translation ? `<details><summary>查看已保存译文</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;padding:6px 8px">${esc(example.translation)}</div></details>` : ''} </td><td class="pronunciation-cell">${audio}</td></tr>`;
+      return `<tr id="${i===0?'grammar-'+esc(g.id):'example-'+esc(example.id)}" data-id="${esc(g.id)}" data-example-id="${esc(example.id || '')}" class="${i===0?'grammar-start':''}">${metadata}<td class="example-cell">${content}${example.translation ? `<details><summary>查看已保存译文</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;padding:6px 8px">${esc(example.translation)}</div></details>` : ''} </td><td class="pronunciation-cell">${audio}</td></tr>`;
     }).join('');
     return rows+`<tr class="add-example-row" data-id="${esc(g.id)}"><td colspan="2"><button data-add-example="${esc(g.id)}">＋ 添加例句</button></td></tr>`
   }).join(''):`<tr><td colspan="4" class="empty">${q?'没有匹配记录':'点击「添加语法」开始记录。'}</td></tr>`;
@@ -172,8 +172,70 @@ function renderGrammar(){
   $$('#grammarList [data-add-example]').forEach(button=>button.onclick=()=>{const g=db.grammar.find(g=>g.id===button.dataset.addExample),e=blankExample();g.exampleItems.push(e);syncExamples(g);persist();renderGrammar();focusCell(g.id,2,e.id)});
   $$('#grammarList [data-delete-example]').forEach(button=>button.onclick=()=>{const id=button.closest('tr').dataset.id;if(!confirm('删除这条例句及其翻译？'))return;removeExample(id,button.dataset.deleteExample);persist();renderGrammar();toast('例句已删除')});
   $$('#grammarList [data-pronounce]').forEach(button=>button.onclick=async()=>{const id=button.closest('tr').dataset.id,g=db.grammar.find(g=>g.id===id),e=g.exampleItems.find(e=>e.id===button.dataset.pronounce),kind=button.dataset.kind,text=e[kind].trim();if(!text){toast(kind==='text'?'请先填写这条例句':'请先填写这条翻译');return}button.disabled=true;try{if(kind==='text'){if(e.detectedText!==text||!e.language)await detectExample(id,e.id);speak(text,e.language||speechLanguage(text))}else speak(text,speechLanguage(text))}finally{button.disabled=false}});
-  $$('#grammarList [draggable]').forEach(handle=>{const id=handle.closest('tr').dataset.id;handle.ondragstart=e=>{dragId=id;e.dataTransfer.setData('text/plain',id);$$('#grammarList tr[data-id]').filter(tr=>tr.dataset.id===id).forEach(tr=>tr.classList.add('dragging'))};handle.ondragend=()=>{dragId=null;$$('#grammarList .dragging').forEach(tr=>tr.classList.remove('dragging'))}});
-  $$('#grammarList tr[data-id]').forEach(tr=>{tr.ondragover=e=>e.preventDefault();tr.ondrop=e=>{e.preventDefault();const id=tr.dataset.id;if(!dragId||dragId===id)return;const a=db.grammar.findIndex(g=>g.id===dragId),b=db.grammar.findIndex(g=>g.id===id);db.grammar.splice(b,0,db.grammar.splice(a,1)[0]);persist();renderGrammar()}});
+  $('#grammarList [draggable]:not([data-example-drag])').forEach(handle=>{const id=handle.closest('tr').dataset.id;handle.ondragstart=e=>{dragId=id;e.dataTransfer.setData('text/plain',id);$$('#grammarList tr[data-id]').filter(tr=>tr.dataset.id===id).forEach(tr=>tr.classList.add('dragging'))};handle.ondragend=()=>{dragId=null;$$('#grammarList .dragging').forEach(tr=>tr.classList.remove('dragging'))}});
+  bindGrammarDrops();
+}
+
+function bindGrammarDrops() {
+  let draggedExample = null;
+  const rows = $$('#grammarList tr[data-id]');
+
+  function clearExampleDrag() {
+    draggedExample?.row.classList.remove('dragging');
+    draggedExample = null;
+    rows.forEach(row => row.style.outline = '');
+  }
+
+  for (const handle of $$('#grammarList [data-example-drag]')) {
+    handle.ondragstart = event => {
+      const row = handle.closest('tr');
+      draggedExample = { row, grammarId: row.dataset.id, exampleId: handle.dataset.exampleDrag };
+      row.classList.add('dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', draggedExample.exampleId);
+    };
+    handle.ondragend = clearExampleDrag;
+  }
+
+  for (const row of rows) {
+    const validExampleTarget = () => draggedExample &&
+      row.dataset.id === draggedExample.grammarId &&
+      row.dataset.exampleId && row.dataset.exampleId !== draggedExample.exampleId;
+
+    row.ondragover = event => {
+      if (!dragId && !validExampleTarget()) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      if (validExampleTarget()) row.style.outline = '2px solid #76b4dd';
+    };
+    row.ondragleave = event => {
+      if (!row.contains(event.relatedTarget)) row.style.outline = '';
+    };
+
+    row.ondrop = event => {
+      event.preventDefault();
+      if (draggedExample) {
+        if (!validExampleTarget()) return;
+        const grammar = db.grammar.find(item => item.id === draggedExample.grammarId);
+        const examples = grammar.exampleItems;
+        const from = examples.findIndex(item => item.id === draggedExample.exampleId);
+        const target = examples.findIndex(item => item.id === row.dataset.exampleId);
+        clearExampleDrag();
+        if (from < 0 || target < 0) return;
+        examples.splice(target, 0, examples.splice(from, 1)[0]);
+        syncExamples(grammar);
+      } else {
+        if (!dragId || dragId === row.dataset.id) return;
+        const from = db.grammar.findIndex(item => item.id === dragId);
+        const target = db.grammar.findIndex(item => item.id === row.dataset.id);
+        if (from < 0 || target < 0) return;
+        db.grammar.splice(target, 0, db.grammar.splice(from, 1)[0]);
+        dragId = null;
+      }
+      persist();
+      renderGrammar();
+    };
+  }
 }
 function parseTSV(text){const rows=[[]];let field='',quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(c==='"'){if(quoted&&text[i+1]==='"'){field+='"';i++}else if(quoted||field==='')quoted=!quoted;else field+=c}else if(!quoted&&(c==='\t'||c==='\n'||c==='\r')){rows.at(-1).push(field);field='';if(c!=='\t'){if(c==='\r'&&text[i+1]==='\n')i++;rows.push([])}}else field+=c}rows.at(-1).push(field);if(rows.length>1&&rows.at(-1).length===1&&rows.at(-1)[0]==='')rows.pop();return rows}
 function pasteCells(event,id,col,exampleId){
