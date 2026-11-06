@@ -27,9 +27,12 @@ body.grammar-workspace{height:100dvh;overflow:hidden}
 body{margin:0;height:100dvh;overflow:hidden}aside{width:172px;padding:26px 14px}.brand{font-size:27px}aside nav{margin-top:35px;gap:8px}aside nav button{font-size:12px;padding:12px}main{margin-left:172px;max-width:none;height:100dvh;padding:0 16px 12px;display:flex;flex-direction:column;overflow:hidden;min-width:0}main>header,main>footer{display:none}main>.view{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}main>#grammar{overflow:hidden}.translate-top{margin-top:14px}#translate{padding-bottom:12px}#voice,#settings,#words{padding:0 10px 20px}.grammar-workspace #grammarTable th:first-child{width:7%}.grammar-workspace #grammarTable th:nth-child(2){width:17%}.grammar-workspace #grammarTable th:nth-child(3){width:23%}.grammar-workspace #grammarTable th:nth-child(4){width:42%}.grammar-workspace #grammarTable th:nth-child(5){width:11%}#grammarTable .row-number span{white-space:nowrap}.example-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}.example-heading .example-index{margin:0}.example-heading button{font-size:10px;color:#8aa6b9;padding:3px 7px}.example-heading button:hover{color:#b95353;background:#fff1f1}.no-examples{font-size:11px;color:#9bb2c2}#moveDialog label{font-size:12px;color:#698ba4}#moveDialog p{font-size:12px}
 @media(max-width:900px){aside{width:138px;padding:25px 10px}main{margin-left:138px;padding-left:10px;padding-right:10px}aside nav button{font-size:11px;padding:10px 7px}}
 @media(max-width:650px){body{display:flex;flex-direction:column}aside{position:static;width:100%;padding:9px 12px;flex:none}aside .brand{font-size:22px}aside nav{margin:0;gap:1px;max-width:280px}aside nav button{font-size:9px;padding:7px}main{margin:0;width:100%;height:auto;flex:1;min-height:0;padding:0 8px 8px}#voice,#settings,#words{padding:0 4px 14px}}
-#grammarTable .grammar-links{padding:8px 10px}
-.grammar-links ul{list-style:none;margin:0;padding:0}
-.grammar-links li{display:flex;align-items:center;gap:3px}
+#grammarTable .grammar-links{padding:6px 9px;vertical-align:middle}
+.grammar-link-item{display:flex;align-items:baseline;gap:4px}
+.grammar-link-item a{min-width:0}
+.grammar-link-item .grammar-grip{user-select:none}
+.grammar-links.link-dragging{opacity:.55}
+.grammar-links.link-drop-target{outline:2px solid #76b4dd;outline-offset:-2px}
 .grammar-links a{color:#1875ab;overflow-wrap:anywhere}
 .grammar-links button{font-size:11px;padding:4px 6px;color:#287aa9}
 #grammarTable .grammar-meta [contenteditable]{min-height:0;padding:10px}
@@ -56,3 +59,5 @@ body{margin:0;height:100dvh;overflow:hidden}aside{width:172px;padding:26px 14px}
 #grammarTable .compact-example [contenteditable]{font-size:15px;line-height:1.65}
 #grammarLinkResults button small{display:block;color:#668da8;margin-top:3px;overflow-wrap:anywhere}
 #grammarPickerHelp:empty{display:none}
+
+#grammarTable .grammar-title-cell [contenteditable]{font-size:18px}
