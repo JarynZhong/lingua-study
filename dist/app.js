@@ -99,8 +99,13 @@ $('#newGrammar').onclick=()=>addRow();$('#search').oninput=renderGrammar;
 const sentenceCollectionTag = 'lingua-sentence-collection';
 const defaultSentenceCollection = { title: '句子收藏（默认）' };
 
-$('#saveExample').textContent = '☆ 收藏三语句子';
-$('#saveExample').onclick = () => {
+$('#saveExample').onclick=()=>{const text=$('#input').value.trim();if(!text){toast('请先输入例句');return}const row=blankRow();row.exampleItems[0].text=text;row.exampleItems[0].language=source;row.exampleItems[0].detectedText=text;syncExamples(row);db.grammar.push(row);persist();view('grammar');focusCell(row.id,0);toast('例句已加入新语法，可直接填写名称')};
+
+const saveSentenceButton = document.createElement('button');
+saveSentenceButton.type = 'button';
+saveSentenceButton.textContent = '☆ 收藏三语句子';
+$('#saveExample').after(saveSentenceButton);
+saveSentenceButton.onclick = () => {
   const snapshot = completedTranslation;
   if (!snapshot || snapshot.version !== revision ||
       snapshot.text !== $('#input').value.trim() || snapshot.from !== source) {
