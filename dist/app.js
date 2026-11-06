@@ -99,14 +99,16 @@ $('#newGrammar').onclick=()=>addRow();$('#search').oninput=renderGrammar;
 const sentenceCollectionTag = 'lingua-sentence-collection';
 const defaultSentenceCollection = { title: '句子收藏（默认）' };
 
-$('#saveExample').onclick=()=>{const text=$('#input').value.trim();if(!text){toast('请先输入例句');return}const row=blankRow();row.exampleItems[0].text=text;row.exampleItems[0].language=source;row.exampleItems[0].detectedText=text;syncExamples(row);db.grammar.push(row);persist();view('grammar');focusCell(row.id,0);toast('例句已加入新语法，可直接填写名称')};
+
 
 const saveSentenceButton = document.createElement('button');
 saveSentenceButton.type = 'button';
 saveSentenceButton.className = 'primary';
 saveSentenceButton.style.cssText = 'font-size:14px;font-weight:600;padding:10px 15px;color:white;background:#216a99;border:1px solid #216a99';
-saveSentenceButton.textContent = '☆ 收藏三语句子';
-$('#saveExample').after(saveSentenceButton);
+saveSentenceButton.textContent = '收藏';
+const translationActions = $('#saveExample').parentElement;
+translationActions.style.justifyContent = 'flex-start';
+$('#saveExample').replaceWith(saveSentenceButton);
 saveSentenceButton.onclick = () => {
   const snapshot = completedTranslation;
   if (!snapshot || snapshot.version !== revision ||
