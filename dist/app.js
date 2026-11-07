@@ -370,7 +370,64 @@ fetch('/.auth/me', { cache: 'no-store' })
 function renderWords(){$('#wordList').innerHTML=db.words.length?db.words.map(w=>`<article class="word-card"><div><h3>${esc(w.text)}</h3><p>${esc(w.meaning)}</p></div><button data-word-delete="${esc(w.id)}">移除</button></article>`).join(''):'<div class="empty">还没有收藏单词。去翻译页面选中一个词，开始积累吧。</div>';$$('[data-word-delete]').forEach(b=>b.onclick=()=>{db.words=db.words.filter(w=>w.id!==b.dataset.wordDelete);persist();renderWords()})}
 async function lookup(text,lang){if(!text||text.length>100)return;const version=++lookupRevision;lookupRecord=null;$('#saveWord').disabled=true;$('#lookupWord').textContent=text;$('#lookupResult').textContent='查询中…';if(!$('#lookup').open)$('#lookup').showModal();try{const meaning=await translate(text,lang,lang==='zh-CN'?'en':'zh-CN');if(version!==lookupRevision)return;lookupRecord={id:uid(),text,meaning,lang};$('#lookupResult').textContent=meaning;$('#saveWord').disabled=false}catch(e){if(version===lookupRevision)$('#lookupResult').textContent=e.message}}
 document.addEventListener('mouseup',e=>{if(!e.target.closest('.translation'))return;let text=window.getSelection().toString().trim(),lang=source;if(e.target===$('#input'))text=$('#input').value.slice($('#input').selectionStart,$('#input').selectionEnd).trim();const output=e.target.closest('.output');if(output)lang=output.id.slice(4);if(text)setTimeout(()=>lookup(text,lang),0)});$('#closeLookup').onclick=()=>$('#lookup').close();$('#lookup').addEventListener('close',()=>lookupRevision++);$('#saveWord').onclick=()=>{if(!lookupRecord)return;if(db.words.some(w=>w.text===lookupRecord.text)){toast('这个单词已经收藏');return}db.words.unshift(lookupRecord);persist();renderWords();$('#lookup').close();toast('已加入生词收藏')};
-$('#export').onclick=()=>{const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='lingua-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};$('#import').onclick=()=>$('#importFile').click();$('#importFile').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>5000000)throw Error();const value=JSON.parse(await file.text());if(!Array.isArray(value.grammar)||!Array.isArray(value.words)||value.grammar.some(g=>typeof g.title!=='string')||value.words.some(w=>typeof w.text!=='string'||typeof w.meaning!=='string'))throw Error();const importedIds=new Map(value.grammar.map(g=>[g,uid()]));const linkMap=new Map(value.grammar.map(g=>[g.id,importedIds.get(g)]));db.grammar.push(...value.grammar.map(g=>{const exampleIds=new Map((Array.isArray(g.exampleItems)?g.exampleItems:[]).map(e=>[e,uid()]));const exampleMap=new Map([...exampleIds].map(([e,id])=>[e.id,id]));const linkExamples=Object.fromEntries(Object.entries(g.linkExamples||{}).filter(([id])=>linkMap.has(id)).map(([id,exampleId])=>[linkMap.get(id),exampleMap.get(exampleId)||null]));return {linkExamples,id:importedIds.get(g),linkedIds:Array.isArray(g.linkedIds)?g.linkedIds.map(id=>linkMap.get(id)).filter(Boolean):[],title:g.title,tag:String(g.tag||''),note:String(g.note||''),examples:String(g.examples||''),exampleItems:Array.isArray(g.exampleItems)?g.exampleItems.map(e=>({id:exampleIds.get(e),note:String(e.note||''),review:e.review,text:String(e.text||''),translation:String(e.translation||''),language:'',detectedText:''})):undefined}}));db.words.push(...value.words.map(w=>({id:uid(),text:w.text,meaning:w.meaning,lang:String(w.lang||'en')})));persist();renderGrammar();toast('备份已合并导入')}catch{toast('文件无效，请选择语间导出的 JSON 备份')}e.target.value=''};function linkedGrammars(grammar){
+$('#export').onclick=()=>{const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='lingua-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};$('#import').onclick = () => $('#importFile').click();
+$('#importFile').onchange = async event => {
+  const input = event.target;
+  const file = input.files[0];
+  if (!file) return;
+
+  let restored;
+  try {
+    if (file.size > 5000000) throw Error();
+    const value = JSON.parse(await file.text());
+    if (!Array.isArray(value.grammar) || !Array.isArray(value.words) ||
+        value.grammar.some(item => typeof item?.title !== 'string') ||
+        value.words.some(word => typeof word?.text !== 'string' || typeof word.meaning !== 'string')) throw Error();
+
+    const linkMap = new Map();
+    const grammar = value.grammar.map(item => {
+      const id = uid();
+      linkMap.set(item.id, id);
+      return { ...item, id };
+    });
+    for (const item of grammar) {
+      const exampleMap = new Map();
+      if (Array.isArray(item.exampleItems)) {
+        item.exampleItems = item.exampleItems.map(example => {
+          if (!example || typeof example !== 'object') throw Error();
+          const id = uid();
+          exampleMap.set(example.id, id);
+          return { ...example, id };
+        });
+      }
+      item.linkedIds = Array.isArray(item.linkedIds)
+        ? item.linkedIds.map(id => linkMap.get(id)).filter(Boolean) : [];
+      item.linkExamples = Object.fromEntries(Object.entries(item.linkExamples || {})
+        .filter(([id]) => linkMap.has(id))
+        .map(([id, exampleId]) => [linkMap.get(id), exampleMap.get(exampleId) || null]));
+      syncExamples(item);
+    }
+    restored = { grammar, words: value.words.map(word => ({ ...word, id: uid() })) };
+  } catch {
+    toast('文件无效，请选择语间导出的 JSON 备份');
+    return;
+  } finally {
+    input.value = '';
+  }
+
+  if (!confirm(`用备份中的 ${restored.grammar.length} 条语法和 ${restored.words.length} 条生词覆盖本地记录？当前本地的 ${db.grammar.length} 条语法和 ${db.words.length} 条生词将被替换。`)) return;
+  const previous = db;
+  db = restored;
+  if (!persist()) {
+    db = previous;
+    return;
+  }
+  $('#search').value = '';
+  renderGrammar();
+  renderWords();
+  toast('已用备份覆盖本地记录');
+};
+function linkedGrammars(grammar){
   const byId=new Map(db.grammar.map(item=>[item.id,item]));
   const slots = Array(grammar.exampleItems.length).fill(null);
   const rowByExample = new Map(grammar.exampleItems.map((example, index) => [example.id, index]));

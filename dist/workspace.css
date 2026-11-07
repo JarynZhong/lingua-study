@@ -38,7 +38,7 @@ body{margin:0;height:100dvh;overflow:hidden}aside{width:172px;padding:26px 14px}
 #grammarTable .grammar-meta [contenteditable]{min-height:0;padding:10px}
 #grammarTable .example-cell,#grammarTable .pronunciation-cell{padding:3px 8px;vertical-align:middle}
 #grammarTable .compact-example{display:flex;align-items:baseline;gap:4px}
-#grammarTable .compact-example [contenteditable]{flex:1;min-width:0;min-height:0;padding:3px 4px;margin:0;font-size:13px;line-height:1.45}
+#grammarTable .compact-example [contenteditable]{flex:1;min-width:0;min-height:0;padding:3px 4px;margin:0;line-height:1.45}
 .compact-example button{padding:3px 6px;color:#6b879a}
 .compact-example button:hover{color:#a52d2d;background:#fff0f0}
 #grammarTable .pronunciation-cell button{padding:3px 4px}
@@ -56,10 +56,11 @@ body{margin:0;height:100dvh;overflow:hidden}aside{width:172px;padding:26px 14px}
 .grammar-title-cell [contenteditable]{flex:1;min-width:0}
 .grammar-grip{cursor:grab;color:#7294a9;padding:4px 2px}
 #grammarTable .example-cell{padding:6px 9px}
-#grammarTable .compact-example [contenteditable]{font-size:15px;line-height:1.65}
+#grammarTable .compact-example [contenteditable]{line-height:1.65}
 #grammarLinkResults button small{display:block;color:#668da8;margin-top:3px;overflow-wrap:anywhere}
 #grammarPickerHelp:empty{display:none}
 
+#grammarTable .compact-example [contenteditable],
 #grammarTable .grammar-title-cell [contenteditable],
 #grammarTable .grammar-note [contenteditable]{font-size:18px}
 
