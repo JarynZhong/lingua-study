@@ -60,7 +60,8 @@ body{margin:0;height:100dvh;overflow:hidden}aside{width:172px;padding:26px 14px}
 #grammarLinkResults button small{display:block;color:#668da8;margin-top:3px;overflow-wrap:anywhere}
 #grammarPickerHelp:empty{display:none}
 
-#grammarTable .grammar-title-cell [contenteditable]{font-size:18px}
+#grammarTable .grammar-title-cell [contenteditable],
+#grammarTable .grammar-note [contenteditable]{font-size:18px}
 
 .grammar-workspace #grammarTable th:nth-child(5){width:9%}
 .dictation-card{max-width:680px}
