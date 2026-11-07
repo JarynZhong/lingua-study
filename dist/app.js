@@ -234,12 +234,24 @@ function bindItemSorting() {
       reset();
       if (!destination) return;
       const grammar = db.grammar.find(item => item.id === grammarId);
-      const items = link ? grammar.linkedIds : grammar.exampleItems;
-      const from = link ? items.indexOf(source.dataset.linkOrder) : items.findIndex(item => item.id === source.dataset.exampleId);
-      const to = link ? items.indexOf(destination.dataset.linkOrder) : items.findIndex(item => item.id === destination.dataset.exampleId);
-      if (from < 0 || to < 0) return;
-      items.splice(to, 0, items.splice(from, 1)[0]);
-      if (!link) syncExamples(grammar);
+      if (link) {
+        const cells = $$('#grammarList [data-link-order]').filter(cell => cell.closest('tr').dataset.id === grammarId);
+        const slots = cells.map(cell => cell.dataset.linkOrder);
+        const from = cells.indexOf(source), to = cells.indexOf(destination);
+        [slots[from], slots[to]] = [slots[to], slots[from]];
+        grammar.linkExamples = Object.fromEntries(slots.flatMap((id, i) =>
+          id ? [[id, cells[i].closest('tr').dataset.exampleId || null]] : []
+        ));
+        const visibleIds = slots.filter(Boolean);
+        grammar.linkedIds = [...visibleIds, ...grammar.linkedIds.filter(id => !visibleIds.includes(id))];
+      } else {
+        const items = grammar.exampleItems;
+        const from = items.findIndex(item => item.id === source.dataset.exampleId);
+        const to = items.findIndex(item => item.id === destination.dataset.exampleId);
+        if (from < 0 || to < 0) return;
+        items.splice(to, 0, items.splice(from, 1)[0]);
+        syncExamples(grammar);
+      }
       persist();
       renderGrammar();
     };
@@ -345,12 +357,29 @@ fetch('/.auth/me', { cache: 'no-store' })
 function renderWords(){$('#wordList').innerHTML=db.words.length?db.words.map(w=>`<article class="word-card"><div><h3>${esc(w.text)}</h3><p>${esc(w.meaning)}</p></div><button data-word-delete="${esc(w.id)}">移除</button></article>`).join(''):'<div class="empty">还没有收藏单词。去翻译页面选中一个词，开始积累吧。</div>';$$('[data-word-delete]').forEach(b=>b.onclick=()=>{db.words=db.words.filter(w=>w.id!==b.dataset.wordDelete);persist();renderWords()})}
 async function lookup(text,lang){if(!text||text.length>100)return;const version=++lookupRevision;lookupRecord=null;$('#saveWord').disabled=true;$('#lookupWord').textContent=text;$('#lookupResult').textContent='查询中…';if(!$('#lookup').open)$('#lookup').showModal();try{const meaning=await translate(text,lang,lang==='zh-CN'?'en':'zh-CN');if(version!==lookupRevision)return;lookupRecord={id:uid(),text,meaning,lang};$('#lookupResult').textContent=meaning;$('#saveWord').disabled=false}catch(e){if(version===lookupRevision)$('#lookupResult').textContent=e.message}}
 document.addEventListener('mouseup',e=>{if(!e.target.closest('.translation'))return;let text=window.getSelection().toString().trim(),lang=source;if(e.target===$('#input'))text=$('#input').value.slice($('#input').selectionStart,$('#input').selectionEnd).trim();const output=e.target.closest('.output');if(output)lang=output.id.slice(4);if(text)setTimeout(()=>lookup(text,lang),0)});$('#closeLookup').onclick=()=>$('#lookup').close();$('#lookup').addEventListener('close',()=>lookupRevision++);$('#saveWord').onclick=()=>{if(!lookupRecord)return;if(db.words.some(w=>w.text===lookupRecord.text)){toast('这个单词已经收藏');return}db.words.unshift(lookupRecord);persist();renderWords();$('#lookup').close();toast('已加入生词收藏')};
-$('#export').onclick=()=>{const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='lingua-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};$('#import').onclick=()=>$('#importFile').click();$('#importFile').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>5000000)throw Error();const value=JSON.parse(await file.text());if(!Array.isArray(value.grammar)||!Array.isArray(value.words)||value.grammar.some(g=>typeof g.title!=='string')||value.words.some(w=>typeof w.text!=='string'||typeof w.meaning!=='string'))throw Error();const importedIds=new Map(value.grammar.map(g=>[g,uid()]));const linkMap=new Map(value.grammar.map(g=>[g.id,importedIds.get(g)]));db.grammar.push(...value.grammar.map(g=>({id:importedIds.get(g),linkedIds:Array.isArray(g.linkedIds)?g.linkedIds.map(id=>linkMap.get(id)).filter(Boolean):[],title:g.title,tag:String(g.tag||''),note:String(g.note||''),examples:String(g.examples||''),exampleItems:Array.isArray(g.exampleItems)?g.exampleItems.map(e=>({id:uid(),text:String(e.text||''),translation:String(e.translation||''),language:'',detectedText:''})):undefined})));db.words.push(...value.words.map(w=>({id:uid(),text:w.text,meaning:w.meaning,lang:String(w.lang||'en')})));persist();renderGrammar();toast('备份已合并导入')}catch{toast('文件无效，请选择语间导出的 JSON 备份')}e.target.value=''};function linkedGrammars(grammar){
+$('#export').onclick=()=>{const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='lingua-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};$('#import').onclick=()=>$('#importFile').click();$('#importFile').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>5000000)throw Error();const value=JSON.parse(await file.text());if(!Array.isArray(value.grammar)||!Array.isArray(value.words)||value.grammar.some(g=>typeof g.title!=='string')||value.words.some(w=>typeof w.text!=='string'||typeof w.meaning!=='string'))throw Error();const importedIds=new Map(value.grammar.map(g=>[g,uid()]));const linkMap=new Map(value.grammar.map(g=>[g.id,importedIds.get(g)]));db.grammar.push(...value.grammar.map(g=>{const exampleIds=new Map((Array.isArray(g.exampleItems)?g.exampleItems:[]).map(e=>[e,uid()]));const exampleMap=new Map([...exampleIds].map(([e,id])=>[e.id,id]));const linkExamples=Object.fromEntries(Object.entries(g.linkExamples||{}).filter(([id])=>linkMap.has(id)).map(([id,exampleId])=>[linkMap.get(id),exampleMap.get(exampleId)||null]));return {linkExamples,id:importedIds.get(g),linkedIds:Array.isArray(g.linkedIds)?g.linkedIds.map(id=>linkMap.get(id)).filter(Boolean):[],title:g.title,tag:String(g.tag||''),note:String(g.note||''),examples:String(g.examples||''),exampleItems:Array.isArray(g.exampleItems)?g.exampleItems.map(e=>({id:exampleIds.get(e),text:String(e.text||''),translation:String(e.translation||''),language:'',detectedText:''})):undefined}}));db.words.push(...value.words.map(w=>({id:uid(),text:w.text,meaning:w.meaning,lang:String(w.lang||'en')})));persist();renderGrammar();toast('备份已合并导入')}catch{toast('文件无效，请选择语间导出的 JSON 备份')}e.target.value=''};function linkedGrammars(grammar){
   const byId=new Map(db.grammar.map(item=>[item.id,item]));
-  return [...new Set(grammar.linkedIds||[])].map(id=>byId.get(id)).filter(Boolean);
+  const slots = Array(grammar.exampleItems.length).fill(null);
+  const rowByExample = new Map(grammar.exampleItems.map((example, index) => [example.id, index]));
+  const unplaced = [], overflow = [];
+  for (const id of new Set(grammar.linkedIds || [])) {
+    const item = byId.get(id);
+    if (!item) continue;
+    const anchor = grammar.linkExamples?.[id];
+    const row = rowByExample.get(anchor);
+    if (row !== undefined && !slots[row]) slots[row] = item;
+    else if (anchor !== undefined) overflow.push(item);
+    else unplaced.push(item);
+  }
+  for (const item of unplaced) {
+    const empty = slots.indexOf(null);
+    if (empty === -1) slots.push(item);
+    else slots[empty] = item;
+  }
+  return slots.concat(overflow);
 }
 function grammarLinksCell(item){
-  if(!item)return '<td class="grammar-links"></td>';
+  if(!item)return '<td class="grammar-links" data-link-order=""></td>';
   const id=esc(item.id), label=esc(grammarLabel(item));
   return `<td class="grammar-links" data-link-order="${id}"><div class="grammar-link-item">
     <span class="grammar-grip" data-link-handle style="touch-action:none" title="拖动调整关联语法顺序" aria-hidden="true">⠿</span>
@@ -363,7 +392,10 @@ function setGrammarLink(a,b,linked){
   if(!a||!b||a===b)return;
   for(const [item,other] of [[a,b],[b,a]]){
     const ids=new Set(item.linkedIds||[]);
-    if(linked)ids.add(other.id);else ids.delete(other.id);
+    if(linked)ids.add(other.id);else {
+      ids.delete(other.id);
+      if(item.linkExamples)delete item.linkExamples[other.id];
+    }
     item.linkedIds=[...ids];
   }
 }
