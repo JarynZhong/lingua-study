@@ -5,7 +5,7 @@ const uid=()=>crypto.randomUUID();let db,api={key:'',region:''},source='en',time
 try{db=JSON.parse(localStorage.getItem('lingua-v1'))}catch{}if(!db||!Array.isArray(db.grammar)||!Array.isArray(db.words))db={grammar:[],words:[]};
 function toast(text){$('#toast').textContent=text;$('#toast').style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').style.display='none',3500)}
 function persist(){try{localStorage.setItem('lingua-v1',JSON.stringify(db));$('#saveState').textContent='已自动保存';return true}catch{$('#saveState').textContent='保存失败，请导出备份';toast('浏览器存储不可用，请导出备份');return false}}
-function view(name){if(name==='settings'&&!translatorAccess.owner)return;document.body.classList.toggle('grammar-workspace',name==='grammar');$$('.view').forEach(el=>el.hidden=el.id!==name);$$('nav button').forEach(el=>el.classList.toggle('active',el.dataset.view===name));if(name==='grammar')renderGrammar();if(name==='words')renderWords()}
+function view(name){if(name==='settings'&&!translatorAccess.owner)return;document.body.classList.toggle('grammar-workspace',name==='grammar');$$('.view').forEach(el=>el.hidden=el.id!==name);$$('nav button').forEach(el=>el.classList.toggle('active',el.dataset.view===name));if(name==='grammar')renderGrammar();if(name==='words')renderWords();if(name==='dictation')refreshDictationProgress()}
 $$('[data-view]').forEach(b=>b.onclick=()=>view(b.dataset.view));
 let translatorAccess = { owner: false, configured: false, shared: false };
 const apiSettingsLinks = $$('[data-view="settings"]');
@@ -128,7 +128,12 @@ function removeExample(grammarId,exampleId){const g=db.grammar.find(g=>g.id===gr
 function normalizeExamples(g){
   if(!Array.isArray(g.exampleItems))g.exampleItems=[{id:uid(),text:String(g.examples||''),translation:'',language:'',detectedText:''}];
 
-  g.exampleItems=g.exampleItems.map(e=>({id:e.id||uid(),text:String(e.text||''),translation:String(e.translation||''),language:String(e.language||''),detectedText:String(e.detectedText||'')}));
+  g.exampleItems=g.exampleItems.map(e=>({id:e.id||uid(),text:String(e.text||''),translation:String(e.translation||''),language:String(e.language||''),detectedText:String(e.detectedText||''),note:String(e.note||''),review:e.review}));
+  if(g.note && g.exampleItems.length){
+    const first=g.exampleItems[0];
+    first.note=[g.note,first.note].filter(Boolean).join('\n');
+    g.note='';
+  }
   return g.exampleItems;
 }
 function syncExamples(g){g.examples=normalizeExamples(g).map(e=>[e.text,e.translation].filter(Boolean).join('\n')).join('\n\n')}
@@ -147,21 +152,23 @@ function addRow(focus=true){const row=blankRow();db.grammar.push(row);persist();
 function editorCell(field,value,col,id,exampleId,placeholder,label){return `<div contenteditable="true" role="textbox" aria-label="${esc(label)}" data-field="${field}" data-col="${col}" ${exampleId?`data-example="${esc(exampleId)}"`:''} data-placeholder="${placeholder}" spellcheck="true">${esc(value)}</div>`}
 function renderGrammar(){
   const q=$('#search').value.toLowerCase();db.grammar.forEach(syncExamples);
-  const gs=db.grammar.filter(g=>fields.map(k=>g[k]||'').join(' ').toLowerCase().includes(q));
+  const gs=db.grammar.filter(g=>[...fields.map(k=>g[k]||''),...g.exampleItems.map(e=>e.note)].join(' ').toLowerCase().includes(q));
   $('#grammarList').innerHTML=gs.length?gs.map(g=>{
     const examples=normalizeExamples(g), links=linkedGrammars(g), name=grammarLabel(g);
     const rowCount=Math.max(1,examples.length,links.length), count=rowCount+1;
     const displayExamples=Array.from({length:rowCount},(_,i)=>examples[i]||{empty:true});
     const rows=displayExamples.map((example,i)=>{
       const label = `例句 ${i+1}，${name}`;
-      const metadata = i===0 ? `<td rowspan="${count}" class="grammar-meta"><div class="grammar-title-cell"><span class="grammar-grip" draggable="true" title="拖动调整顺序" aria-hidden="true">⠿</span>${editorCell('title',g.title,0,g.id,null,'语法名称','语法名称')}</div></td><td rowspan="${count}" class="grammar-meta grammar-note">${editorCell('note',g.note,1,g.id,null,'输入说明…','语法说明')}</td>` : '';
+      const metadata = i===0 ? `<td rowspan="${count}" class="grammar-meta"><div class="grammar-title-cell"><span class="grammar-grip" draggable="true" title="拖动调整顺序" aria-hidden="true">⠿</span>${editorCell('title',g.title,0,g.id,null,'语法名称','语法名称')}</div></td>` : '';
       const content = example.empty ? (!examples.length && i===0 ? '<span class="no-examples">还没有例句</span>' : '') : `<div class="compact-example">
         <span data-example-drag="${esc(example.id)}" title="拖动调整例句顺序" aria-label="拖动调整例句顺序" style="cursor:grab;user-select:none;touch-action:none">⠿</span><span aria-hidden="true">・</span>${editorCell('text',example.text,2,g.id,example.id,'输入例句…',label)}
         <button type="button" data-delete-example="${esc(example.id)}" aria-label="删除${esc(label)}">×</button></div>`;
       const audio = example.empty ? '' : `<button type="button" data-pronounce="${esc(example.id)}" data-kind="text" aria-label="朗读${esc(label)}">◖))</button>`;
-      return `<tr id="${i===0?'grammar-'+esc(g.id):'example-'+esc(example.id)}" data-id="${esc(g.id)}" data-example-id="${esc(example.id || '')}" class="${i===0?'grammar-start':''}">${metadata}<td class="example-cell">${content}${example.translation ? `<details><summary>查看已保存译文</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;padding:6px 8px">${esc(example.translation)}</div></details>` : ''} </td>${grammarLinksCell(links[i])}<td class="pronunciation-cell">${audio}</td></tr>`;
+      return `<tr id="${i===0?'grammar-'+esc(g.id):'example-'+esc(example.id)}" data-id="${esc(g.id)}" data-example-id="${esc(example.id || '')}" class="${i===0?'grammar-start':''}">${metadata}<td class="grammar-note">${example.empty
+        ? (!examples.length && i===0 ? editorCell('note',g.note,1,g.id,null,'输入说明…','语法说明') : '')
+        : editorCell('note',example.note,1,g.id,example.id,'输入说明…','语法说明')}</td><td class="example-cell">${content}${example.translation ? `<details><summary>查看已保存译文</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;padding:6px 8px">${esc(example.translation)}</div></details>` : ''} </td>${grammarLinksCell(links[i])}<td class="pronunciation-cell">${audio}</td></tr>`;
     }).join('');
-    return rows+`<tr class="add-example-row" data-id="${esc(g.id)}"><td><button data-add-example="${esc(g.id)}">＋ 添加例句</button></td><td class="grammar-links"><button type="button" data-link-grammar="${esc(g.id)}">＋ 关联语法</button></td><td></td></tr>`
+    return rows+`<tr class="add-example-row" data-id="${esc(g.id)}"><td></td><td><button data-add-example="${esc(g.id)}">＋ 添加例句</button></td><td class="grammar-links"><button type="button" data-link-grammar="${esc(g.id)}">＋ 关联语法</button></td><td></td></tr>`
   }).join(''):`<tr><td colspan="5" class="empty">${q?'没有匹配记录':'点击「添加语法」开始记录。'}</td></tr>`;
   bindGrammarLinks();
   bindItemSorting();
@@ -270,8 +277,14 @@ function pasteCells(event,id,col,exampleId){
   if(!/[\t\r\n]/.test(text)){const selection=window.getSelection(),range=selection?.rangeCount?selection.getRangeAt(0):null;if(range){range.deleteContents();const node=document.createTextNode(text);range.insertNode(node);range.setStartAfter(node);range.collapse(true);selection.removeAllRanges();selection.addRange(range);event.currentTarget.dispatchEvent(new Event('input',{bubbles:true}))}return}
   const matrix=parseTSV(text).slice(0,1000),start=db.grammar.findIndex(g=>g.id===id),changed=[];
   let current=db.grammar[start];normalizeExamples(current);
-  if(col>=2){let index=Math.max(0,current.exampleItems.findIndex(e=>e.id===exampleId));matrix.forEach((values,r)=>{while(current.exampleItems.length<=index+r)current.exampleItems.push(blankExample());const e=current.exampleItems[index+r];if(col===2){e.text=values[0]||'';}else e.translation=values[0]||'';e.language=speechLanguage(e.text);e.detectedText=e.text.trim();changed.push([current.id,e.id])});syncExamples(current)}
-  else{let offset=0;matrix.forEach((values,r)=>{const continuation=r>0&&col===0&&values.length>=3&&values.slice(0,2).every(v=>!v.trim());if(r>0&&!continuation){offset++;while(db.grammar.length<=start+offset)db.grammar.push(blankRow());current=db.grammar[start+offset];normalizeExamples(current)}if(continuation||!current.exampleItems.length)current.exampleItems.push(blankExample());const e=continuation?current.exampleItems.at(-1):current.exampleItems[0];values.forEach((value,c)=>{const target=col+c;if(target<2)current[fields[target]]=value;else if(target===2)e.text=value;});e.language=speechLanguage(e.text);e.detectedText=e.text.trim();syncExamples(current);changed.push([current.id,e.id])})}
+  if(col===1&&exampleId){
+    const index=current.exampleItems.findIndex(e=>e.id===exampleId);
+    matrix.forEach((values,r)=>{
+      while(current.exampleItems.length<=index+r)current.exampleItems.push(blankExample());
+      current.exampleItems[index+r].note=values[0]||'';
+    });
+  }else if(col>=2){let index=Math.max(0,current.exampleItems.findIndex(e=>e.id===exampleId));matrix.forEach((values,r)=>{while(current.exampleItems.length<=index+r)current.exampleItems.push(blankExample());const e=current.exampleItems[index+r];if(col===2){e.text=values[0]||'';}else e.translation=values[0]||'';e.language=speechLanguage(e.text);e.detectedText=e.text.trim();changed.push([current.id,e.id])});syncExamples(current)}
+  else{let offset=0;matrix.forEach((values,r)=>{const continuation=r>0&&col===0&&values.length>=3&&!values[0].trim();if(r>0&&!continuation){offset++;while(db.grammar.length<=start+offset)db.grammar.push(blankRow());current=db.grammar[start+offset];normalizeExamples(current)}if(continuation||!current.exampleItems.length)current.exampleItems.push(blankExample());const e=continuation?current.exampleItems.at(-1):current.exampleItems[0];values.forEach((value,c)=>{const target=col+c;if(target===0)current.title=value;else if(target===1)e.note=value;else if(target===2)e.text=value;});e.language=speechLanguage(e.text);e.detectedText=e.text.trim();syncExamples(current);changed.push([current.id,e.id])})}
   persist();renderGrammar();focusCell(id,col,exampleId);changed.forEach(args=>detectExample(...args));
 }
 $('#newGrammar').onclick=()=>addRow();$('#search').oninput=renderGrammar;
@@ -322,7 +335,7 @@ saveSentenceButton.onclick = () => {
       .map(([lang, label]) => label + '：' + snapshot.texts[lang])
       .join('\n');
 
-    const entries = normalizeExamples(row).filter(item => item.text.trim() || item.translation.trim());
+    const entries = normalizeExamples(row).filter(item => item.text.trim() || item.translation.trim() || item.note?.trim());
     row.exampleItems = [...entries, example];
     syncExamples(row);
     if (!persist()) {
@@ -357,7 +370,7 @@ fetch('/.auth/me', { cache: 'no-store' })
 function renderWords(){$('#wordList').innerHTML=db.words.length?db.words.map(w=>`<article class="word-card"><div><h3>${esc(w.text)}</h3><p>${esc(w.meaning)}</p></div><button data-word-delete="${esc(w.id)}">移除</button></article>`).join(''):'<div class="empty">还没有收藏单词。去翻译页面选中一个词，开始积累吧。</div>';$$('[data-word-delete]').forEach(b=>b.onclick=()=>{db.words=db.words.filter(w=>w.id!==b.dataset.wordDelete);persist();renderWords()})}
 async function lookup(text,lang){if(!text||text.length>100)return;const version=++lookupRevision;lookupRecord=null;$('#saveWord').disabled=true;$('#lookupWord').textContent=text;$('#lookupResult').textContent='查询中…';if(!$('#lookup').open)$('#lookup').showModal();try{const meaning=await translate(text,lang,lang==='zh-CN'?'en':'zh-CN');if(version!==lookupRevision)return;lookupRecord={id:uid(),text,meaning,lang};$('#lookupResult').textContent=meaning;$('#saveWord').disabled=false}catch(e){if(version===lookupRevision)$('#lookupResult').textContent=e.message}}
 document.addEventListener('mouseup',e=>{if(!e.target.closest('.translation'))return;let text=window.getSelection().toString().trim(),lang=source;if(e.target===$('#input'))text=$('#input').value.slice($('#input').selectionStart,$('#input').selectionEnd).trim();const output=e.target.closest('.output');if(output)lang=output.id.slice(4);if(text)setTimeout(()=>lookup(text,lang),0)});$('#closeLookup').onclick=()=>$('#lookup').close();$('#lookup').addEventListener('close',()=>lookupRevision++);$('#saveWord').onclick=()=>{if(!lookupRecord)return;if(db.words.some(w=>w.text===lookupRecord.text)){toast('这个单词已经收藏');return}db.words.unshift(lookupRecord);persist();renderWords();$('#lookup').close();toast('已加入生词收藏')};
-$('#export').onclick=()=>{const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='lingua-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};$('#import').onclick=()=>$('#importFile').click();$('#importFile').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>5000000)throw Error();const value=JSON.parse(await file.text());if(!Array.isArray(value.grammar)||!Array.isArray(value.words)||value.grammar.some(g=>typeof g.title!=='string')||value.words.some(w=>typeof w.text!=='string'||typeof w.meaning!=='string'))throw Error();const importedIds=new Map(value.grammar.map(g=>[g,uid()]));const linkMap=new Map(value.grammar.map(g=>[g.id,importedIds.get(g)]));db.grammar.push(...value.grammar.map(g=>{const exampleIds=new Map((Array.isArray(g.exampleItems)?g.exampleItems:[]).map(e=>[e,uid()]));const exampleMap=new Map([...exampleIds].map(([e,id])=>[e.id,id]));const linkExamples=Object.fromEntries(Object.entries(g.linkExamples||{}).filter(([id])=>linkMap.has(id)).map(([id,exampleId])=>[linkMap.get(id),exampleMap.get(exampleId)||null]));return {linkExamples,id:importedIds.get(g),linkedIds:Array.isArray(g.linkedIds)?g.linkedIds.map(id=>linkMap.get(id)).filter(Boolean):[],title:g.title,tag:String(g.tag||''),note:String(g.note||''),examples:String(g.examples||''),exampleItems:Array.isArray(g.exampleItems)?g.exampleItems.map(e=>({id:exampleIds.get(e),text:String(e.text||''),translation:String(e.translation||''),language:'',detectedText:''})):undefined}}));db.words.push(...value.words.map(w=>({id:uid(),text:w.text,meaning:w.meaning,lang:String(w.lang||'en')})));persist();renderGrammar();toast('备份已合并导入')}catch{toast('文件无效，请选择语间导出的 JSON 备份')}e.target.value=''};function linkedGrammars(grammar){
+$('#export').onclick=()=>{const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='lingua-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};$('#import').onclick=()=>$('#importFile').click();$('#importFile').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>5000000)throw Error();const value=JSON.parse(await file.text());if(!Array.isArray(value.grammar)||!Array.isArray(value.words)||value.grammar.some(g=>typeof g.title!=='string')||value.words.some(w=>typeof w.text!=='string'||typeof w.meaning!=='string'))throw Error();const importedIds=new Map(value.grammar.map(g=>[g,uid()]));const linkMap=new Map(value.grammar.map(g=>[g.id,importedIds.get(g)]));db.grammar.push(...value.grammar.map(g=>{const exampleIds=new Map((Array.isArray(g.exampleItems)?g.exampleItems:[]).map(e=>[e,uid()]));const exampleMap=new Map([...exampleIds].map(([e,id])=>[e.id,id]));const linkExamples=Object.fromEntries(Object.entries(g.linkExamples||{}).filter(([id])=>linkMap.has(id)).map(([id,exampleId])=>[linkMap.get(id),exampleMap.get(exampleId)||null]));return {linkExamples,id:importedIds.get(g),linkedIds:Array.isArray(g.linkedIds)?g.linkedIds.map(id=>linkMap.get(id)).filter(Boolean):[],title:g.title,tag:String(g.tag||''),note:String(g.note||''),examples:String(g.examples||''),exampleItems:Array.isArray(g.exampleItems)?g.exampleItems.map(e=>({id:exampleIds.get(e),note:String(e.note||''),review:e.review,text:String(e.text||''),translation:String(e.translation||''),language:'',detectedText:''})):undefined}}));db.words.push(...value.words.map(w=>({id:uid(),text:w.text,meaning:w.meaning,lang:String(w.lang||'en')})));persist();renderGrammar();toast('备份已合并导入')}catch{toast('文件无效，请选择语间导出的 JSON 备份')}e.target.value=''};function linkedGrammars(grammar){
   const byId=new Map(db.grammar.map(item=>[item.id,item]));
   const slots = Array(grammar.exampleItems.length).fill(null);
   const rowByExample = new Map(grammar.exampleItems.map((example, index) => [example.id, index]));
@@ -621,6 +634,8 @@ $('#showMoveGrammar').onclick=()=>{
 
 
 let dictationPrompt = null;
+const reviewIntervals = [1, 3, 7, 14, 30, 60];
+const dayMs = 86400000;
 const dictationInput = $('#dictationInput');
 const dictationStatus = $('#dictationStatus');
 const dictationOriginal = $('#dictationOriginal');
@@ -629,7 +644,7 @@ function resetDictationAnswer() {
   dictationInput.value = '';
   dictationOriginal.textContent = '';
   dictationOriginal.hidden = true;
-  for (const id of ['dictationInput', 'dictationCheck', 'dictationReplay', 'dictationReveal']) {
+  for (const id of ['dictationInput', 'dictationCheck', 'dictationReplay', 'dictationReveal', 'dictationMaster']) {
     $('#' + id).disabled = !dictationPrompt;
   }
   $('#dictationNext').textContent = dictationPrompt ? '下一题' : '抽取并播放';
@@ -641,32 +656,106 @@ function dictationKey(text, language) {
   return language === 'en' ? normalized.replace(/\s+/g, ' ') : normalized.replace(/\s+/g, '');
 }
 
-$('#dictationLanguage').onchange = () => {
-  dictationPrompt = null;
-  resetDictationAnswer();
-  dictationStatus.textContent = '点击「抽取并播放」开始。';
-};
-$('#dictationNext').onclick = () => {
+function dictationPool() {
   const lang = $('#dictationLanguage').value;
-  const pool = new Set();
+  const pool = new Map();
   for (const grammar of db.grammar) {
     for (const example of normalizeExamples(grammar)) {
       const text = example.text.trim();
       const language = example.detectedText === text && example.language
         ? normalizeLanguage(example.language) : speechLanguage(text);
-      if (language === lang && /\p{L}/u.test(text)) pool.add(text);
+      if (language !== lang || !/\p{L}/u.test(text)) continue;
+      const review = example.review?.text === text ? example.review : null;
+      if (!pool.has(text) || (review?.updated || 0) > (pool.get(text).review?.updated || 0)) {
+        pool.set(text, { text, lang, grammarId: grammar.id, exampleId: example.id, review });
+      }
     }
   }
-  if (pool.size > 1) pool.delete(dictationPrompt?.text);
-  const choices = [...pool];
-  dictationPrompt = choices.length ? { text: choices[Math.floor(Math.random() * choices.length)], lang } : null;
+  return [...pool.values()];
+}
+
+function reviewDay(date) {
+  return [date.getFullYear(), date.getMonth() + 1, date.getDate()].join('-');
+}
+
+function refreshDictationProgress(pool = dictationPool()) {
+  const now = Date.now();
+  const mastered = pool.filter(card => card.review?.stage >= 5).length;
+  const due = pool.filter(card => card.review && card.review.due <= now).length;
+  const fresh = pool.filter(card => !card.review).length;
+  $('#dictationProgress').textContent = `已掌握 ${mastered} / ${pool.length} · 待复习 ${due} · 新句 ${fresh}`;
+  $('#dictationCompletion').max = pool.length || 1;
+  $('#dictationCompletion').value = mastered;
+  const days = Array.from({length:7}, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (6 - index));
+    const count = pool.filter(card => card.review?.successDays?.includes(reviewDay(date))).length;
+    return {label:`${date.getMonth()+1}/${date.getDate()}`,count};
+  });
+  const peak = Math.max(1, ...days.map(day => day.count));
+  $('#dictationCurve').innerHTML = days.map(({label,count}) =>
+    `<li><span>${label}</span><meter min="0" max="${peak}" value="${count}" aria-label="${label} 完成 ${count} 句"></meter><span>${count}</span></li>`
+  ).join('');
+}
+
+$('#dictationLanguage').onchange = () => {
+  dictationPrompt = null;
   resetDictationAnswer();
-  dictationStatus.textContent = dictationPrompt ? '听完后输入原句，再点击「检查答案」。' : '暂无这种语言的例句，请在「我的语法」里添加。';
-  if (dictationPrompt) {
-    speak(dictationPrompt.text, dictationPrompt.lang);
-    dictationInput.focus();
-  }
+  refreshDictationProgress();
+  dictationStatus.textContent = '点击「抽取并播放」开始。';
 };
+$('#dictationNext').onclick = () => {
+  const pool = dictationPool();
+  const now = Date.now();
+  const due = pool.filter(card => card.review && card.review.due <= now);
+  const fresh = pool.filter(card => !card.review);
+  const choices = due.length ? due : fresh;
+  dictationPrompt = choices.length ? choices[Math.floor(Math.random() * choices.length)] : null;
+  resetDictationAnswer();
+  refreshDictationProgress(pool);
+  if (!dictationPrompt) {
+    const next = Math.min(...pool.map(card => card.review?.due || Infinity));
+    dictationStatus.textContent = pool.length
+      ? '当前没有到期的例句。下次复习：' + new Date(next).toLocaleString('zh-CN')
+      : '暂无这种语言的例句，请在「我的语法」里添加。';
+    return;
+  }
+  dictationStatus.textContent = '听完后输入原句，再点击「检查答案」。';
+  speak(dictationPrompt.text, dictationPrompt.lang);
+  dictationInput.focus();
+};
+
+function gradeDictation(result) {
+  const card = dictationPrompt;
+  if (!card || card.graded) return;
+  const example = db.grammar.find(grammar => grammar.id === card.grammarId)
+    ?.exampleItems?.find(item => item.id === card.exampleId);
+  if (!example || example.text.trim() !== card.text) {
+    dictationStatus.textContent = '这条例句已修改，请换下一题。';
+    return;
+  }
+  const now = Date.now(), previous = card.review;
+  const stage = result === 'again' ? 0 : result === 'mastered'
+    ? Math.max(5, previous?.stage || 0) : Math.min(reviewIntervals.length, (previous?.stage || 0) + 1);
+  const delay = stage ? reviewIntervals[stage - 1] * dayMs : 10 * 60000;
+  const successDays = Array.isArray(previous?.successDays) ? previous.successDays : [];
+  const review = {text:card.text, stage, updated:now, due:now + delay,
+    successDays:[...new Set([...successDays, ...(stage ? [reviewDay(new Date(now))] : [])])].slice(-7)};
+  const oldReview = example.review;
+  example.review = review;
+  if (!persist()) {
+    example.review = oldReview;
+    dictationStatus.textContent = '复习进度保存失败，请重试。';
+    return;
+  }
+  card.graded = true;
+  $('#dictationCheck').disabled = true;
+  $('#dictationMaster').disabled = true;
+  refreshDictationProgress();
+  const message = result === 'correct' ? '正确！' : result === 'mastered' ? '已标记为掌握。' : '已安排重新练习。';
+  dictationStatus.textContent = message + (stage ? ` ${reviewIntervals[stage - 1]} 天后复习。` : ' 10 分钟后复习。');
+}
+
 $('#dictationReplay').onclick = () => {
   if (dictationPrompt) speak(dictationPrompt.text, dictationPrompt.lang);
 };
@@ -675,12 +764,25 @@ $('#dictationForm').onsubmit = event => {
   if (!dictationPrompt) return;
   const {text, lang} = dictationPrompt;
   const answer = dictationKey(dictationInput.value, lang);
-  const correct = answer === dictationKey(text, lang);
-  dictationStatus.textContent = !answer ? '请先输入你听到的原句。' : correct ? '正确！' : '还有出入，可以重听后再试。';
-  if (correct) $('#dictationReveal').click();
+  if (!answer) {
+    dictationStatus.textContent = '请先输入你听到的原句。';
+    return;
+  }
+  if (answer === dictationKey(text, lang)) {
+    gradeDictation('correct');
+    showDictationOriginal();
+  } else {
+    gradeDictation('again');
+    showDictationOriginal();
+  }
 };
-$('#dictationReveal').onclick = () => {
-  if (!dictationPrompt) return;
+function showDictationOriginal() {
   dictationOriginal.textContent = dictationPrompt.text;
   dictationOriginal.hidden = false;
+}
+$('#dictationReveal').onclick = () => {
+  if (!dictationPrompt) return;
+  gradeDictation('again');
+  showDictationOriginal();
 };
+$('#dictationMaster').onclick = () => gradeDictation('mastered');

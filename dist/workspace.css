@@ -68,3 +68,10 @@ body{margin:0;height:100dvh;overflow:hidden}aside{width:172px;padding:26px 14px}
 #dictationForm{display:grid;gap:8px;margin-top:18px}
 #dictationInput{width:100%;min-height:100px;resize:vertical}
 #dictationOriginal{white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;background:#eaf5fd;border-radius:6px}
+
+#grammarTable .grammar-note{vertical-align:middle;padding:4px 8px}
+#grammarTable .grammar-note [contenteditable]{min-height:0;padding:4px;overflow-wrap:anywhere}
+#dictationCompletion{width:100%;accent-color:#216a99}
+.dictation-curve{display:grid;gap:5px;list-style:none;padding:0;margin:0 0 16px}
+.dictation-curve li{display:grid;grid-template-columns:50px 1fr 30px;gap:8px;align-items:center}
+.dictation-curve meter{width:100%}
