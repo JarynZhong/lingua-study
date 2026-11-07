@@ -48,10 +48,10 @@ body{margin:0;height:100dvh;overflow:hidden}aside{width:172px;padding:26px 14px}
 #grammarTable .grammar-highlight>*{background:#e1f2ff}
 #grammarLinkResults{display:grid;max-height:40vh;overflow:auto}
 #grammarLinkResults button{text-align:left;padding:8px}
-.grammar-workspace #grammarTable th:nth-child(1){width:21%}
-.grammar-workspace #grammarTable th:nth-child(2){width:23%}
-.grammar-workspace #grammarTable th:nth-child(3){width:47%}
-.grammar-workspace #grammarTable th:nth-child(4){width:9%}
+.grammar-workspace #grammarTable th:nth-child(1){width:18%}
+.grammar-workspace #grammarTable th:nth-child(2){width:18%}
+.grammar-workspace #grammarTable th:nth-child(3){width:37%}
+.grammar-workspace #grammarTable th:nth-child(4){width:18%}
 .grammar-title-cell{display:flex;align-items:baseline;gap:4px;padding-left:8px}
 .grammar-title-cell [contenteditable]{flex:1;min-width:0}
 .grammar-grip{cursor:grab;color:#7294a9;padding:4px 2px}
@@ -61,3 +61,10 @@ body{margin:0;height:100dvh;overflow:hidden}aside{width:172px;padding:26px 14px}
 #grammarPickerHelp:empty{display:none}
 
 #grammarTable .grammar-title-cell [contenteditable]{font-size:18px}
+
+.grammar-workspace #grammarTable th:nth-child(5){width:9%}
+.dictation-card{max-width:680px}
+.dictation-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+#dictationForm{display:grid;gap:8px;margin-top:18px}
+#dictationInput{width:100%;min-height:100px;resize:vertical}
+#dictationOriginal{white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;background:#eaf5fd;border-radius:6px}

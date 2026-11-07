@@ -154,15 +154,15 @@ function renderGrammar(){
     const displayExamples=Array.from({length:rowCount},(_,i)=>examples[i]||{empty:true});
     const rows=displayExamples.map((example,i)=>{
       const label = `例句 ${i+1}，${name}`;
-      const metadata = i===0 ? `<td rowspan="${count}" class="grammar-meta"><div class="grammar-title-cell"><span class="grammar-grip" draggable="true" title="拖动调整顺序" aria-hidden="true">⠿</span>${editorCell('title',g.title,0,g.id,null,'语法名称','语法名称')}</div></td>` : '';
+      const metadata = i===0 ? `<td rowspan="${count}" class="grammar-meta"><div class="grammar-title-cell"><span class="grammar-grip" draggable="true" title="拖动调整顺序" aria-hidden="true">⠿</span>${editorCell('title',g.title,0,g.id,null,'语法名称','语法名称')}</div></td><td rowspan="${count}" class="grammar-meta grammar-note">${editorCell('note',g.note,1,g.id,null,'输入说明…','语法说明')}</td>` : '';
       const content = example.empty ? (!examples.length && i===0 ? '<span class="no-examples">还没有例句</span>' : '') : `<div class="compact-example">
         <span data-example-drag="${esc(example.id)}" title="拖动调整例句顺序" aria-label="拖动调整例句顺序" style="cursor:grab;user-select:none;touch-action:none">⠿</span><span aria-hidden="true">・</span>${editorCell('text',example.text,2,g.id,example.id,'输入例句…',label)}
         <button type="button" data-delete-example="${esc(example.id)}" aria-label="删除${esc(label)}">×</button></div>`;
       const audio = example.empty ? '' : `<button type="button" data-pronounce="${esc(example.id)}" data-kind="text" aria-label="朗读${esc(label)}">◖))</button>`;
-      return `<tr id="${i===0?'grammar-'+esc(g.id):'example-'+esc(example.id)}" data-id="${esc(g.id)}" data-example-id="${esc(example.id || '')}" class="${i===0?'grammar-start':''}">${metadata}${grammarLinksCell(links[i])}<td class="example-cell">${content}${example.translation ? `<details><summary>查看已保存译文</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;padding:6px 8px">${esc(example.translation)}</div></details>` : ''} </td><td class="pronunciation-cell">${audio}</td></tr>`;
+      return `<tr id="${i===0?'grammar-'+esc(g.id):'example-'+esc(example.id)}" data-id="${esc(g.id)}" data-example-id="${esc(example.id || '')}" class="${i===0?'grammar-start':''}">${metadata}<td class="example-cell">${content}${example.translation ? `<details><summary>查看已保存译文</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;padding:6px 8px">${esc(example.translation)}</div></details>` : ''} </td>${grammarLinksCell(links[i])}<td class="pronunciation-cell">${audio}</td></tr>`;
     }).join('');
-    return rows+`<tr class="add-example-row" data-id="${esc(g.id)}"><td class="grammar-links"><button type="button" data-link-grammar="${esc(g.id)}">＋ 关联语法</button></td><td colspan="2"><button data-add-example="${esc(g.id)}">＋ 添加例句</button></td></tr>`
-  }).join(''):`<tr><td colspan="4" class="empty">${q?'没有匹配记录':'点击「添加语法」开始记录。'}</td></tr>`;
+    return rows+`<tr class="add-example-row" data-id="${esc(g.id)}"><td><button data-add-example="${esc(g.id)}">＋ 添加例句</button></td><td class="grammar-links"><button type="button" data-link-grammar="${esc(g.id)}">＋ 关联语法</button></td><td></td></tr>`
+  }).join(''):`<tr><td colspan="5" class="empty">${q?'没有匹配记录':'点击「添加语法」开始记录。'}</td></tr>`;
   bindGrammarLinks();
   bindItemSorting();
   $$('#grammarList [contenteditable]').forEach(cell=>{
@@ -618,3 +618,69 @@ $('#showMoveGrammar').onclick=()=>{
     alert('已从云端加载');
   });
 })();
+
+
+let dictationPrompt = null;
+const dictationInput = $('#dictationInput');
+const dictationStatus = $('#dictationStatus');
+const dictationOriginal = $('#dictationOriginal');
+
+function resetDictationAnswer() {
+  dictationInput.value = '';
+  dictationOriginal.textContent = '';
+  dictationOriginal.hidden = true;
+  for (const id of ['dictationInput', 'dictationCheck', 'dictationReplay', 'dictationReveal']) {
+    $('#' + id).disabled = !dictationPrompt;
+  }
+  $('#dictationNext').textContent = dictationPrompt ? '下一题' : '抽取并播放';
+}
+
+function dictationKey(text, language) {
+  const normalized = text.normalize('NFKC').toLowerCase().replace(/[’‘]/g, "'")
+    .trim().replace(/[.!?。！？]+$/u, '').trim();
+  return language === 'en' ? normalized.replace(/\s+/g, ' ') : normalized.replace(/\s+/g, '');
+}
+
+$('#dictationLanguage').onchange = () => {
+  dictationPrompt = null;
+  resetDictationAnswer();
+  dictationStatus.textContent = '点击「抽取并播放」开始。';
+};
+$('#dictationNext').onclick = () => {
+  const lang = $('#dictationLanguage').value;
+  const pool = new Set();
+  for (const grammar of db.grammar) {
+    for (const example of normalizeExamples(grammar)) {
+      const text = example.text.trim();
+      const language = example.detectedText === text && example.language
+        ? normalizeLanguage(example.language) : speechLanguage(text);
+      if (language === lang && /\p{L}/u.test(text)) pool.add(text);
+    }
+  }
+  if (pool.size > 1) pool.delete(dictationPrompt?.text);
+  const choices = [...pool];
+  dictationPrompt = choices.length ? { text: choices[Math.floor(Math.random() * choices.length)], lang } : null;
+  resetDictationAnswer();
+  dictationStatus.textContent = dictationPrompt ? '听完后输入原句，再点击「检查答案」。' : '暂无这种语言的例句，请在「我的语法」里添加。';
+  if (dictationPrompt) {
+    speak(dictationPrompt.text, dictationPrompt.lang);
+    dictationInput.focus();
+  }
+};
+$('#dictationReplay').onclick = () => {
+  if (dictationPrompt) speak(dictationPrompt.text, dictationPrompt.lang);
+};
+$('#dictationForm').onsubmit = event => {
+  event.preventDefault();
+  if (!dictationPrompt) return;
+  const {text, lang} = dictationPrompt;
+  const answer = dictationKey(dictationInput.value, lang);
+  const correct = answer === dictationKey(text, lang);
+  dictationStatus.textContent = !answer ? '请先输入你听到的原句。' : correct ? '正确！' : '还有出入，可以重听后再试。';
+  if (correct) $('#dictationReveal').click();
+};
+$('#dictationReveal').onclick = () => {
+  if (!dictationPrompt) return;
+  dictationOriginal.textContent = dictationPrompt.text;
+  dictationOriginal.hidden = false;
+};
