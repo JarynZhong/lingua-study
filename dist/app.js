@@ -121,7 +121,59 @@ sourceInput.addEventListener('blur', () => {
 $('#input').oninput=schedule;$('#retry').onclick=()=>{clearTimeout(timer);runTranslation()};$('#clear').onclick=()=>{$('#input').value='';schedule()};
 $('#readInput').onclick=()=>speak($('#input').value,source);$$('[data-speak]').forEach(b=>b.onclick=()=>speak($('#out-'+b.dataset.speak).textContent,b.dataset.speak));
 $('#copy').onclick=async()=>{try{await navigator.clipboard.writeText(Object.keys(langs).filter(k=>k!==source).map(k=>langs[k]+'\n'+$('#out-'+k).textContent).join('\n\n'));toast('已复制两种译文')}catch{toast('请选中文字手动复制')}};
-const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;let recognition,recording=false;if(Recognition){recognition=new Recognition();recognition.onresult=e=>{$('#input').value=($('#input').value+' '+e.results[0][0].transcript).trim().slice(0,5000);schedule()};recognition.onend=()=>{recording=false;$('#mic').classList.remove('listening');$('#mic').textContent='♩ 语音输入'};recognition.onerror=e=>toast(e.error==='not-allowed'?'请允许麦克风访问后重试':'语音识别失败：'+e.error)}$('#mic').onclick=()=>{if(!recognition){toast('当前浏览器不支持语音输入');return}if(recording){recognition.stop();return}try{recognition.lang={en:'en-US',ja:'ja-JP','zh-CN':'zh-CN'}[source];recognition.start();recording=true;$('#mic').classList.add('listening');$('#mic').textContent='● 正在聆听 · 点击停止'}catch{toast('语音识别尚未就绪，请稍后再试')}};
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognition = Recognition ? new Recognition() : null;
+const mic = $('#mic');
+let listening = false, recognitionActive = false;
+function setListening(active) {
+  listening = active;
+  mic.classList.toggle('listening', active);
+  mic.textContent = active ? '⏸ 暂停语音输入' : '♩ 语音输入';
+}
+function startRecognition() {
+  try {
+    recognition.lang = {en:'en-US',ja:'ja-JP','zh-CN':'zh-CN'}[source];
+    recognition.start();
+    recognitionActive = true;
+    setListening(true);
+  } catch {
+    setListening(false);
+    toast('语音识别尚未就绪，请稍后再试');
+  }
+}
+if (recognition) {
+  recognition.continuous = true;
+  recognition.onresult = event => {
+    const chunks = [];
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      if (event.results[i].isFinal) chunks.push(event.results[i][0].transcript);
+    }
+    if (chunks.length) {
+      $('#input').value = [$('#input').value, ...chunks].join(' ').trim().slice(0,5000);
+      schedule();
+    }
+  };
+  recognition.onend = () => {
+    recognitionActive = false;
+    if (listening) startRecognition();
+    else mic.disabled = false;
+  };
+  recognition.onerror = event => {
+    if (event.error === 'no-speech' || (event.error === 'aborted' && !listening)) return;
+    setListening(false);
+    toast(event.error === 'not-allowed' ? '请允许麦克风访问后重试' : '语音识别失败：' + event.error);
+  };
+}
+mic.onclick = () => {
+  if (!recognition) return toast('当前浏览器不支持语音输入');
+  if (!recognitionActive) {
+    startRecognition();
+    return;
+  }
+  setListening(false);
+  mic.disabled = true;
+  recognition.stop();
+};
 function localLanguage(text){if(!text.trim())return '—';const ja=/[\u3040-\u30ff]/.test(text),zh=/[\u3400-\u9fff]/.test(text),en=/[A-Za-z]{2}/.test(text);return [ja?'日语':zh?'中文（初步）':'',en?'英语':''].filter(Boolean).join(' / ')||'未识别'}
 
 function removeExample(grammarId,exampleId){const g=db.grammar.find(g=>g.id===grammarId);if(!g)return;g.exampleItems=normalizeExamples(g).filter(e=>e.id!==exampleId);syncExamples(g)}
@@ -149,9 +201,20 @@ function blankExample(){return {id:uid(),text:'',translation:'',language:'',dete
 function blankRow(){return {id:uid(),title:'',tag:'',note:'',examples:'',exampleItems:[blankExample()]}}
 function focusCell(id,col=0,exampleId){const cells=$$('#grammarList [contenteditable]').filter(el=>el.closest('tr').dataset.id===id);const cell=exampleId?cells.find(el=>el.dataset.example===exampleId&&Number(el.dataset.col)===col):cells.find(el=>Number(el.dataset.col)===col);cell?.focus()}
 function addRow(focus=true){const row=blankRow();db.grammar.push(row);persist();$('#search').value='';renderGrammar();if(focus)focusCell(row.id,0);return row}
-function editorCell(field,value,col,id,exampleId,placeholder,label){return `<div contenteditable="true" role="textbox" aria-label="${esc(label)}" data-field="${field}" data-col="${col}" ${exampleId?`data-example="${esc(exampleId)}"`:''} data-placeholder="${placeholder}" spellcheck="true">${esc(value)}</div>`}
+function highlightMatch(value, query) {
+  if (!query) return esc(value);
+  const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
+  const text = String(value ?? '');
+  let html = '', offset = 0;
+  for (const match of text.matchAll(pattern)) {
+    html += esc(text.slice(offset, match.index)) + '<mark>' + esc(match[0]) + '</mark>';
+    offset = match.index + match[0].length;
+  }
+  return html + esc(text.slice(offset));
+}
+function editorCell(field,value,col,id,exampleId,placeholder,label,query){return `<div contenteditable="true" role="textbox" aria-label="${esc(label)}" data-field="${field}" data-col="${col}" ${exampleId?`data-example="${esc(exampleId)}"`:''} data-placeholder="${placeholder}" spellcheck="true">${highlightMatch(value,query)}</div>`}
 function renderGrammar(){
-  const q=$('#search').value.toLowerCase();db.grammar.forEach(syncExamples);
+  const q=$('#search').value.trim().toLowerCase();db.grammar.forEach(syncExamples);
   const gs=db.grammar.filter(g=>[...fields.map(k=>g[k]||''),...g.exampleItems.map(e=>e.note)].join(' ').toLowerCase().includes(q));
   $('#grammarList').innerHTML=gs.length?gs.map(g=>{
     const examples=normalizeExamples(g), links=linkedGrammars(g), name=grammarLabel(g);
@@ -159,14 +222,14 @@ function renderGrammar(){
     const displayExamples=Array.from({length:rowCount},(_,i)=>examples[i]||{empty:true});
     const rows=displayExamples.map((example,i)=>{
       const label = `例句 ${i+1}，${name}`;
-      const metadata = i===0 ? `<td rowspan="${count}" class="grammar-meta"><div class="grammar-title-cell"><span class="grammar-grip" draggable="true" title="拖动调整顺序" aria-hidden="true">⠿</span>${editorCell('title',g.title,0,g.id,null,'语法名称','语法名称')}</div></td>` : '';
+      const metadata = i===0 ? `<td rowspan="${count}" class="grammar-meta"><div class="grammar-title-cell"><span class="grammar-grip" draggable="true" title="拖动调整顺序" aria-hidden="true">⠿</span>${editorCell('title',g.title,0,g.id,null,'语法名称','语法名称',q)}</div></td>` : '';
       const content = example.empty ? (!examples.length && i===0 ? '<span class="no-examples">还没有例句</span>' : '') : `<div class="compact-example">
-        <span data-example-drag="${esc(example.id)}" title="拖动调整例句顺序" aria-label="拖动调整例句顺序" style="cursor:grab;user-select:none;touch-action:none">⠿</span><span aria-hidden="true">・</span>${editorCell('text',example.text,2,g.id,example.id,'输入例句…',label)}
+        <span data-example-drag="${esc(example.id)}" title="拖动调整例句顺序" aria-label="拖动调整例句顺序" style="cursor:grab;user-select:none;touch-action:none">⠿</span><span aria-hidden="true">・</span>${editorCell('text',example.text,2,g.id,example.id,'输入例句…',label,q)}
         <button type="button" data-delete-example="${esc(example.id)}" aria-label="删除${esc(label)}">×</button></div>`;
       const audio = example.empty ? '' : `<button type="button" data-pronounce="${esc(example.id)}" data-kind="text" aria-label="朗读${esc(label)}">◖))</button>`;
       return `<tr id="${i===0?'grammar-'+esc(g.id):'example-'+esc(example.id)}" data-id="${esc(g.id)}" data-example-id="${esc(example.id || '')}" class="${i===0?'grammar-start':''}">${metadata}<td class="grammar-note">${example.empty
-        ? (!examples.length && i===0 ? editorCell('note',g.note,1,g.id,null,'','语法说明') : '')
-        : editorCell('note',example.note,1,g.id,example.id,'','语法说明')}</td><td class="example-cell">${content}${example.translation ? `<details><summary>查看已保存译文</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;padding:6px 8px">${esc(example.translation)}</div></details>` : ''} </td>${grammarLinksCell(links[i])}<td class="pronunciation-cell">${audio}</td></tr>`;
+        ? (!examples.length && i===0 ? editorCell('note',g.note,1,g.id,null,'','语法说明',q) : '')
+        : editorCell('note',example.note,1,g.id,example.id,'','语法说明',q)}</td><td class="example-cell">${content}${example.translation ? `<details${q && example.translation.toLowerCase().includes(q) ? ' open' : ''}><summary>查看已保存译文</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;padding:6px 8px">${highlightMatch(example.translation,q)}</div></details>` : ''} </td>${grammarLinksCell(links[i])}<td class="pronunciation-cell">${audio}</td></tr>`;
     }).join('');
     return rows+`<tr class="add-example-row" data-id="${esc(g.id)}"><td></td><td><button data-add-example="${esc(g.id)}">＋ 添加例句</button></td><td class="grammar-links"><button type="button" data-link-grammar="${esc(g.id)}">＋ 关联语法</button></td><td></td></tr>`
   }).join(''):`<tr><td colspan="5" class="empty">${q?'没有匹配记录':'点击「添加语法」开始记录。'}</td></tr>`;
@@ -274,7 +337,7 @@ function parseTSV(text){const rows=[[]];let field='',quoted=false;for(let i=0;i<
 function pasteCells(event,id,col,exampleId){
   event.preventDefault();const text=event.clipboardData.getData('text/plain');
   // A plain sentence stays within the selected cell and keeps normal insertion behavior.
-  if(!/[\t\r\n]/.test(text)){const selection=window.getSelection(),range=selection?.rangeCount?selection.getRangeAt(0):null;if(range){range.deleteContents();const node=document.createTextNode(text);range.insertNode(node);range.setStartAfter(node);range.collapse(true);selection.removeAllRanges();selection.addRange(range);event.currentTarget.dispatchEvent(new Event('input',{bubbles:true}))}return}
+  if((col===1 && !text.includes('\t')) || !/[\t\r\n]/.test(text)){const selection=window.getSelection(),range=selection?.rangeCount?selection.getRangeAt(0):null;if(range){range.deleteContents();const node=document.createTextNode(text.replace(/\r\n?/g,'\n'));range.insertNode(node);range.setStartAfter(node);range.collapse(true);selection.removeAllRanges();selection.addRange(range);event.currentTarget.dispatchEvent(new Event('input',{bubbles:true}))}return}
   const matrix=parseTSV(text).slice(0,1000),start=db.grammar.findIndex(g=>g.id===id),changed=[];
   let current=db.grammar[start];normalizeExamples(current);
   if(col===1&&exampleId){
@@ -301,6 +364,9 @@ saveSentenceButton.textContent = '收藏';
 const translationActions = $('#saveExample').parentElement;
 translationActions.style.justifyContent = 'flex-start';
 $('#saveExample').replaceWith(saveSentenceButton);
+const savedGrammarButton = $('#openSavedGrammar');
+const lookupButton = $('#lookupSelection');
+translationActions.append(savedGrammarButton, lookupButton);
 saveSentenceButton.onclick = () => {
   const snapshot = completedTranslation;
   if (!snapshot || snapshot.version !== revision ||
@@ -348,6 +414,15 @@ saveSentenceButton.onclick = () => {
     }
 
     $('#grammarLinkDialog').close();
+    savedGrammarButton.hidden = false;
+    savedGrammarButton.onclick = () => {
+      if (!db.grammar.some(item => item.id === row.id)) {
+        savedGrammarButton.hidden = true;
+        return toast('这条语法已不存在');
+      }
+      view('grammar');
+      jumpToGrammar(row.id);
+    };
     toast('已收藏到「' + grammarLabel(row) + '」');
   }, '保存整句原文和三语译文');
 };
@@ -367,9 +442,98 @@ fetch('/.auth/me', { cache: 'no-store' })
   })
   .catch(() => {});
 
-function renderWords(){$('#wordList').innerHTML=db.words.length?db.words.map(w=>`<article class="word-card"><div><h3>${esc(w.text)}</h3><p>${esc(w.meaning)}</p></div><button data-word-delete="${esc(w.id)}">移除</button></article>`).join(''):'<div class="empty">还没有收藏单词。去翻译页面选中一个词，开始积累吧。</div>';$$('[data-word-delete]').forEach(b=>b.onclick=()=>{db.words=db.words.filter(w=>w.id!==b.dataset.wordDelete);persist();renderWords()})}
-async function lookup(text,lang){if(!text||text.length>100)return;const version=++lookupRevision;lookupRecord=null;$('#saveWord').disabled=true;$('#lookupWord').textContent=text;$('#lookupResult').textContent='查询中…';if(!$('#lookup').open)$('#lookup').showModal();try{const meaning=await translate(text,lang,lang==='zh-CN'?'en':'zh-CN');if(version!==lookupRevision)return;lookupRecord={id:uid(),text,meaning,lang};$('#lookupResult').textContent=meaning;$('#saveWord').disabled=false}catch(e){if(version===lookupRevision)$('#lookupResult').textContent=e.message}}
-document.addEventListener('mouseup',e=>{if(!e.target.closest('.translation'))return;let text=window.getSelection().toString().trim(),lang=source;if(e.target===$('#input'))text=$('#input').value.slice($('#input').selectionStart,$('#input').selectionEnd).trim();const output=e.target.closest('.output');if(output)lang=output.id.slice(4);if(text)setTimeout(()=>lookup(text,lang),0)});$('#closeLookup').onclick=()=>$('#lookup').close();$('#lookup').addEventListener('close',()=>lookupRevision++);$('#saveWord').onclick=()=>{if(!lookupRecord)return;if(db.words.some(w=>w.text===lookupRecord.text)){toast('这个单词已经收藏');return}db.words.unshift(lookupRecord);persist();renderWords();$('#lookup').close();toast('已加入生词收藏')};
+function renderWords() {
+  $('#wordList').innerHTML = db.words.length ? db.words.map(word => {
+    const examples = Array.isArray(word.examples) ? word.examples : [];
+    return `<tr><td>${esc(word.text)}</td><td>${esc(word.meaning)}</td><td>${examples.map(example =>
+      `<div class="word-example">${esc(example.text)}</div>`).join('')}</td>
+      <td><button type="button" data-word-audio="${esc(word.id)}" aria-label="朗读单词">◖))</button>
+      <button type="button" data-word-delete="${esc(word.id)}">移除</button></td></tr>`;
+  }).join('') : '<tr><td colspan="4" class="empty">还没有收藏单词。</td></tr>';
+  for (const button of $$('[data-word-audio]')) button.onclick = () => {
+    const word = db.words.find(item => item.id === button.dataset.wordAudio);
+    if (word) speak(word.text, word.lang || speechLanguage(word.text));
+  };
+  for (const button of $$('[data-word-delete]')) button.onclick = () => {
+    const previous = db.words;
+    db.words = previous.filter(word => word.id !== button.dataset.wordDelete);
+    if (!persist()) db.words = previous;
+    renderWords();
+  };
+}
+async function lookup(selection) {
+  const {text, lang, original, originalLanguage} = selection;
+  const version = ++lookupRevision;
+  lookupRecord = null;
+  $('#saveWord').disabled = true;
+  $('#lookupWord').textContent = text;
+  $('#lookupResult').textContent = '查询中…';
+  if (!$('#lookup').open) $('#lookup').showModal();
+  try {
+    const meaning = await translate(text,lang,lang==='zh-CN'?'en':'zh-CN');
+    if (version !== lookupRevision) return;
+    lookupRecord = {id:uid(),text,meaning,lang,examples:original ? [{text:original,lang:originalLanguage}] : []};
+    $('#lookupResult').textContent = meaning;
+    $('#saveWord').disabled = false;
+  } catch (error) {
+    if (version === lookupRevision) $('#lookupResult').textContent = error.message;
+  }
+}
+let selectedLookup = null;
+function captureLookupSelection() {
+  if ($('#translate').hidden || $('#lookup').open) return;
+  const input = $('#input'), selection = window.getSelection();
+  let text, lang = source, output = null;
+  if (document.activeElement === input) {
+    text = input.value.slice(input.selectionStart, input.selectionEnd);
+  } else if (selection?.rangeCount) {
+    const node = selection.anchorNode;
+    output = (node?.nodeType === 1 ? node : node?.parentElement)?.closest('.translation .output');
+    if (output?.contains(selection.focusNode) && !output.closest('[hidden]')) {
+      text = selection.toString();
+      lang = output.id.slice(4);
+    }
+  }
+  text = text?.trim();
+  if (!text || text.length > 100) return;
+  selectedLookup = {text,lang,original:input.value.trim(),originalLanguage:source,output,outputText:output?.textContent};
+  lookupButton.textContent = '查词：' + text;
+  lookupButton.disabled = false;
+}
+document.addEventListener('selectionchange', captureLookupSelection);
+$('#input').addEventListener('select', captureLookupSelection);
+lookupButton.onclick = () => {
+  const selected = selectedLookup;
+  if (!selected || selected.original !== $('#input').value.trim() || selected.originalLanguage !== source ||
+      (selected.output && selected.outputText !== selected.output.textContent)) {
+    lookupButton.disabled = true;
+    lookupButton.textContent = '查词';
+    return toast('请重新选中文字');
+  }
+  lookup(selected);
+};
+$('#closeLookup').onclick = () => $('#lookup').close();
+$('#lookup').addEventListener('close', () => { lookupRevision++; lookupRecord = null; });
+$('#saveWord').onclick = () => {
+  if (!lookupRecord) return;
+  const previous = db.words;
+  const existing = previous.find(word => word.text === lookupRecord.text && word.lang === lookupRecord.lang);
+  if (existing) {
+    const examples = Array.isArray(existing.examples) ? existing.examples : [];
+    const additions = lookupRecord.examples.filter(example =>
+      !examples.some(saved => saved.text === example.text && saved.lang === example.lang));
+    db.words = previous.map(word => word === existing ? {...word,examples:[...examples,...additions]} : word);
+  } else {
+    db.words = [lookupRecord,...previous];
+  }
+  if (!persist()) {
+    db.words = previous;
+    return;
+  }
+  renderWords();
+  $('#lookup').close();
+  toast('已加入生词收藏');
+};
 $('#export').onclick=()=>{const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='lingua-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};$('#import').onclick = () => $('#importFile').click();
 $('#importFile').onchange = async event => {
   const input = event.target;
