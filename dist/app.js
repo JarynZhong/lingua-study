@@ -445,11 +445,21 @@ fetch('/.auth/me', { cache: 'no-store' })
 function renderWords() {
   $('#wordList').innerHTML = db.words.length ? db.words.map(word => {
     const examples = Array.isArray(word.examples) ? word.examples : [];
-    return `<tr><td>${esc(word.text)}</td><td>${esc(word.meaning)}</td><td>${examples.map(example =>
+    return `<tr><td>${esc(word.text)}</td><td><div class="word-meaning" contenteditable="plaintext-only" role="textbox" aria-label="编辑释义" aria-multiline="true" data-word-meaning="${esc(word.id)}">${esc(word.meaning)}</div></td><td>${examples.map(example =>
       `<div class="word-example">${esc(example.text)}</div>`).join('')}</td>
       <td><button type="button" data-word-audio="${esc(word.id)}" aria-label="朗读单词">◖))</button>
       <button type="button" data-word-delete="${esc(word.id)}">移除</button></td></tr>`;
   }).join('') : '<tr><td colspan="4" class="empty">还没有收藏单词。</td></tr>';
+  for (const cell of $$('#wordList [data-word-meaning]')) cell.oninput = () => {
+    const word = db.words.find(item => item.id === cell.dataset.wordMeaning);
+    if (!word) return;
+    const previous = word.meaning;
+    word.meaning = cell.innerText.replace(/\r/g, '').trimEnd();
+    if (!persist()) {
+      word.meaning = previous;
+      cell.textContent = previous;
+    }
+  };
   for (const button of $$('[data-word-audio]')) button.onclick = () => {
     const word = db.words.find(item => item.id === button.dataset.wordAudio);
     if (word) speak(word.text, word.lang || speechLanguage(word.text));

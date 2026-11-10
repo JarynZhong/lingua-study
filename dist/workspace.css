@@ -87,3 +87,7 @@ body{margin:0;height:100dvh;overflow:hidden}aside{width:172px;padding:26px 14px}
 #wordTable .word-example{white-space:pre-wrap}
 #wordTable .word-example+.word-example{border-top:1px solid #e0edf6;margin-top:6px;padding-top:6px}
 #lookupSelection{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+#wordTable tbody td{font-size:18px}
+#wordTable .word-meaning{min-height:1.5em;white-space:pre-wrap}
+#wordTable .word-meaning:focus{outline:2px solid #76b4dd;outline-offset:2px;border-radius:3px}
