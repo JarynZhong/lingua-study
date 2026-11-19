@@ -5,7 +5,7 @@ const uid=()=>crypto.randomUUID();let db,api={key:'',region:''},source='en',time
 try{db=JSON.parse(localStorage.getItem('lingua-v1'))}catch{}if(!db||!Array.isArray(db.grammar)||!Array.isArray(db.words))db={grammar:[],words:[]};
 function toast(text){$('#toast').textContent=text;$('#toast').style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').style.display='none',3500)}
 function persist(){try{localStorage.setItem('lingua-v1',JSON.stringify(db));$('#saveState').textContent='已自动保存';return true}catch{$('#saveState').textContent='保存失败，请导出备份';toast('浏览器存储不可用，请导出备份');return false}}
-function view(name){if(name==='settings'&&!translatorAccess.owner)return;document.body.classList.toggle('grammar-workspace',name==='grammar');$$('.view').forEach(el=>el.hidden=el.id!==name);$$('nav button').forEach(el=>el.classList.toggle('active',el.dataset.view===name));if(name==='grammar')renderGrammar();if(name==='words')renderWords();if(name==='dictation')refreshDictationProgress()}
+function view(name){if(name==='settings'&&!translatorAccess.owner)return;document.body.classList.toggle('grammar-workspace',name==='grammar');$$('.view').forEach(el=>el.hidden=el.id!==name);$$('nav button').forEach(el=>el.classList.toggle('active',el.dataset.view===name));if(name==='grammar')renderGrammar();if(name==='words')renderWords();if(name==='sentences')renderSentences();if(name==='dictation')refreshDictationProgress()}
 $$('[data-view]').forEach(b=>b.onclick=()=>view(b.dataset.view));
 let translatorAccess = { owner: false, configured: false, shared: false };
 const apiSettingsLinks = $$('[data-view="settings"]');
@@ -215,7 +215,7 @@ function highlightMatch(value, query) {
 function editorCell(field,value,col,id,exampleId,placeholder,label,query){return `<div contenteditable="true" role="textbox" aria-label="${esc(label)}" data-field="${field}" data-col="${col}" ${exampleId?`data-example="${esc(exampleId)}"`:''} data-placeholder="${placeholder}" spellcheck="true">${highlightMatch(value,query)}</div>`}
 function renderGrammar(){
   const q=$('#search').value.trim().toLowerCase();db.grammar.forEach(syncExamples);
-  const gs=db.grammar.filter(g=>[...fields.map(k=>g[k]||''),...g.exampleItems.map(e=>e.note)].join(' ').toLowerCase().includes(q));
+  const gs=db.grammar.filter(g=>g.tag!=='lingua-sentence-collection').filter(g=>[...fields.map(k=>g[k]||''),...g.exampleItems.map(e=>e.note)].join(' ').toLowerCase().includes(q));
   $('#grammarList').innerHTML=gs.length?gs.map(g=>{
     const examples=normalizeExamples(g), links=linkedGrammars(g), name=grammarLabel(g);
     const rowCount=Math.max(1,examples.length,links.length), count=rowCount+1;
@@ -352,7 +352,7 @@ function pasteCells(event,id,col,exampleId){
 }
 $('#newGrammar').onclick=()=>addRow();$('#search').oninput=renderGrammar;
 const sentenceCollectionTag = 'lingua-sentence-collection';
-const defaultSentenceCollection = { title: '句子收藏（默认）' };
+const defaultSentenceCollection = { title: '句子收藏（独立页面）' };
 
 
 
@@ -420,27 +420,87 @@ saveSentenceButton.onclick = () => {
         savedGrammarButton.hidden = true;
         return toast('这条语法已不存在');
       }
-      view('grammar');
-      jumpToGrammar(row.id);
+      if (row.tag === sentenceCollectionTag) view('sentences');
+      else { view('grammar'); jumpToGrammar(row.id); }
     };
     toast('已收藏到「' + grammarLabel(row) + '」');
   }, '保存整句原文和三语译文');
 };
 
 const githubLogin = document.createElement('a');
-githubLogin.href = '/.auth/login/github';
+const loginReturn = new URL(location.href);
+loginReturn.searchParams.set('loginReturn', '1');
+githubLogin.href = '/.auth/login/github?post_login_redirect_uri=' + encodeURIComponent(loginReturn.href);
 githubLogin.textContent = '使用 GitHub 登录';
 githubLogin.style.cssText = 'font-size:12px;color:#476578;text-underline-offset:3px';
 $('.language-options').after(githubLogin);
+const autoLoginKey = 'lingua-auto-login';
+const returnedFromLogin = new URL(location.href).searchParams.has('loginReturn');
+if (returnedFromLogin) {
+  const clean = new URL(location.href);
+  clean.searchParams.delete('loginReturn');
+  history.replaceState(null, '', clean.href);
+}
+githubLogin.onclick = () => {
+  try { localStorage.setItem(autoLoginKey, 'yes'); } catch {}
+};
 fetch('/.auth/me', { cache: 'no-store' })
   .then(response => response.ok ? response.json() : null)
   .then(result => {
-    const user = result?.clientPrincipal;
-    if (user?.identityProvider !== 'github') return;
-    githubLogin.textContent = '退出 GitHub';
-    githubLogin.href = '/.auth/logout';
+    if (!result) return;
+    const user = result.clientPrincipal;
+    if (user?.identityProvider === 'github') {
+      try { localStorage.setItem(autoLoginKey, 'yes'); sessionStorage.removeItem('lingua-login-attempt'); } catch {}
+      githubLogin.textContent = '退出 GitHub';
+      githubLogin.href = '/.auth/logout';
+      githubLogin.onclick = () => {
+        try { localStorage.removeItem(autoLoginKey); } catch {}
+      };
+      return;
+    }
+    try {
+      if (!returnedFromLogin && localStorage.getItem(autoLoginKey) === 'yes' &&
+          !sessionStorage.getItem('lingua-login-attempt')) {
+        sessionStorage.setItem('lingua-login-attempt', 'yes');
+        location.replace(githubLogin.href);
+      }
+    } catch {}
   })
   .catch(() => {});
+
+function renderSentences() {
+  const rows = [];
+  const query = $('#sentenceSearch').value.trim().toLowerCase();
+  for (const grammar of db.grammar.filter(item=>item.tag==='lingua-sentence-collection')) {
+    for (const example of normalizeExamples(grammar)) {
+      if (![example.text,example.translation,example.note].join(' ').toLowerCase().includes(query)) continue;
+      rows.push(`<tr data-sentence-grammar="${esc(grammar.id)}" data-sentence-example="${esc(example.id)}">
+        <td><div contenteditable="plaintext-only" role="textbox" aria-label="句子说明" data-sentence-note>${esc(example.note)}</div></td>
+        <td>${esc(example.text)}</td><td>${esc(example.translation)}</td>
+        <td><button type="button" data-sentence-audio>◖))</button><button type="button" data-sentence-delete>删除</button></td></tr>`);
+    }
+  }
+  $('#sentenceList').innerHTML = rows.join('') || '<tr><td colspan="4" class="empty">暂无匹配的收藏句子。</td></tr>';
+  for (const row of $$('#sentenceList tr[data-sentence-example]')) {
+    const grammar = db.grammar.find(item=>item.id===row.dataset.sentenceGrammar);
+    const example = grammar.exampleItems.find(item=>item.id===row.dataset.sentenceExample);
+    row.querySelector('[data-sentence-audio]').onclick = () => speak(example.text,example.language||speechLanguage(example.text));
+    row.querySelector('[data-sentence-note]').oninput = event => {
+      const previous = example.note;
+      example.note = event.currentTarget.innerText;
+      if (!persist()) {example.note=previous;event.currentTarget.textContent=previous;}
+    };
+    row.querySelector('[data-sentence-delete]').onclick = () => {
+      if (!confirm('删除这条收藏句子及其翻译？')) return;
+      const previous = grammar.exampleItems, previousText = grammar.examples;
+      grammar.exampleItems = previous.filter(item=>item.id!==example.id);
+      syncExamples(grammar);
+      if (!persist()) {grammar.exampleItems=previous;grammar.examples=previousText;}
+      renderSentences();
+    };
+  }
+}
+$('#sentenceSearch').oninput = renderSentences;
 
 function renderWords() {
   $('#wordList').innerHTML = db.words.length ? db.words.map(word => {
@@ -644,6 +704,8 @@ function setGrammarLink(a,b,linked){
   }
 }
 function jumpToGrammar(id){
+  const target = db.grammar.find(item=>item.id===id);
+  if(target?.tag==='lingua-sentence-collection'){view('sentences');return;}
   $('#search').value='';
   renderGrammar();
   const row=$$('#grammarList .grammar-start').find(item=>item.dataset.id===id);
