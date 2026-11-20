@@ -91,15 +91,3 @@ body{margin:0;height:100dvh;overflow:hidden}aside{width:172px;padding:26px 14px}
 #wordTable tbody td{font-size:18px}
 #wordTable .word-meaning{min-height:1.5em;white-space:pre-wrap}
 #wordTable .word-meaning:focus{outline:2px solid #76b4dd;outline-offset:2px;border-radius:3px}
-
-#sentences{display:flex;flex-direction:column;gap:12px}
-#sentences[hidden]{display:none}
-#sentences .sheet-scroll{flex:1;min-height:0;overflow:auto}
-#sentenceTable{width:100%;min-width:680px;table-layout:fixed}
-#sentenceTable td{font-size:18px;white-space:pre-wrap;overflow-wrap:anywhere;vertical-align:top;padding:10px}
-#sentenceTable th:last-child{width:110px}
-#sentenceTable [contenteditable]{min-height:1.5em}
-
-#sentenceTable summary{cursor:pointer}
-#sentenceTable .sentence-translations{margin-top:10px;white-space:pre-wrap}
-#grammarTable [data-toggle-sentences]{margin:6px 10px;color:#216a99}

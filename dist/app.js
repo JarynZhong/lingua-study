@@ -5,7 +5,7 @@ const uid=()=>crypto.randomUUID();let db,api={key:'',region:''},source='en',time
 try{db=JSON.parse(localStorage.getItem('lingua-v1'))}catch{}if(!db||!Array.isArray(db.grammar)||!Array.isArray(db.words))db={grammar:[],words:[]};
 function toast(text){$('#toast').textContent=text;$('#toast').style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').style.display='none',3500)}
 function persist(){try{localStorage.setItem('lingua-v1',JSON.stringify(db));$('#saveState').textContent='已自动保存';return true}catch{$('#saveState').textContent='保存失败，请导出备份';toast('浏览器存储不可用，请导出备份');return false}}
-function view(name){if(name==='settings'&&!translatorAccess.owner)return;document.body.classList.toggle('grammar-workspace',name==='grammar');$$('.view').forEach(el=>el.hidden=el.id!==name);$$('nav button').forEach(el=>el.classList.toggle('active',el.dataset.view===name));if(name==='grammar')renderGrammar();if(name==='words')renderWords();if(name==='sentences')renderSentences();if(name==='dictation')refreshDictationProgress()}
+function view(name){if(name==='settings'&&!translatorAccess.owner)return;document.body.classList.toggle('grammar-workspace',name==='grammar');$$('.view').forEach(el=>el.hidden=el.id!==name);$$('nav button').forEach(el=>el.classList.toggle('active',el.dataset.view===name));if(name==='grammar')renderGrammar();if(name==='words')renderWords();if(name==='dictation')refreshDictationProgress()}
 $$('[data-view]').forEach(b=>b.onclick=()=>view(b.dataset.view));
 let translatorAccess = { owner: false, configured: false, shared: false };
 const apiSettingsLinks = $$('[data-view="settings"]');
@@ -213,44 +213,26 @@ function highlightMatch(value, query) {
   return html + esc(text.slice(offset));
 }
 function editorCell(field,value,col,id,exampleId,placeholder,label,query){return `<div contenteditable="true" role="textbox" aria-label="${esc(label)}" data-field="${field}" data-col="${col}" ${exampleId?`data-example="${esc(exampleId)}"`:''} data-placeholder="${placeholder}" spellcheck="true">${highlightMatch(value,query)}</div>`}
-const expandedSentenceGroups = new Set();
-function savedTranslations(example) {
-  const text = example.text.trim();
-  const sourceLanguage = example.language || speechLanguage(text);
-  const sourceLabel = langs[normalizeLanguage(sourceLanguage)];
-  return String(example.translation || '').split('\n').filter(line => {
-    const match = line.match(/^(English|中文|日本語)[：:]\s*(.*)$/u);
-    return !match || match[1] !== sourceLabel || match[2].trim() !== text;
-  }).join('\n');
-}
 function renderGrammar(){
   const q=$('#search').value.trim().toLowerCase();db.grammar.forEach(syncExamples);
   const gs=db.grammar.filter(g=>[...fields.map(k=>g[k]||''),...g.exampleItems.map(e=>e.note)].join(' ').toLowerCase().includes(q));
   $('#grammarList').innerHTML=gs.length?gs.map(g=>{
     const examples=normalizeExamples(g), links=linkedGrammars(g), name=grammarLabel(g);
-    const folded = g.tag === 'lingua-sentence-collection' && !q && !expandedSentenceGroups.has(g.id);
-    const visibleExamples = folded ? examples.slice(0,1) : examples;
-    const rowCount=Math.max(1,visibleExamples.length,folded ? 0 : links.length), count=rowCount+1;
-    const displayExamples=Array.from({length:rowCount},(_,i)=>visibleExamples[i]||{empty:true});
+    const rowCount=Math.max(1,examples.length,links.length), count=rowCount+1;
+    const displayExamples=Array.from({length:rowCount},(_,i)=>examples[i]||{empty:true});
     const rows=displayExamples.map((example,i)=>{
       const label = `例句 ${i+1}，${name}`;
-      const metadata = i===0 ? `<td rowspan="${count}" class="grammar-meta"><div class="grammar-title-cell"><span class="grammar-grip" draggable="true" title="拖动调整顺序" aria-hidden="true">⠿</span>${editorCell('title',g.title,0,g.id,null,'语法名称','语法名称',q)}</div>${g.tag==='lingua-sentence-collection' && examples.length>1 ? `<button type="button" data-toggle-sentences="${esc(g.id)}">${folded ? '展开全部 '+examples.length+' 句' : '折叠句子'}</button>` : ''}</td>` : '';
+      const metadata = i===0 ? `<td rowspan="${count}" class="grammar-meta"><div class="grammar-title-cell"><span class="grammar-grip" draggable="true" title="拖动调整顺序" aria-hidden="true">⠿</span>${editorCell('title',g.title,0,g.id,null,'语法名称','语法名称',q)}</div></td>` : '';
       const content = example.empty ? (!examples.length && i===0 ? '<span class="no-examples">还没有例句</span>' : '') : `<div class="compact-example">
         <span data-example-drag="${esc(example.id)}" title="拖动调整例句顺序" aria-label="拖动调整例句顺序" style="cursor:grab;user-select:none;touch-action:none">⠿</span><span aria-hidden="true">・</span>${editorCell('text',example.text,2,g.id,example.id,'输入例句…',label,q)}
         <button type="button" data-delete-example="${esc(example.id)}" aria-label="删除${esc(label)}">×</button></div>`;
       const audio = example.empty ? '' : `<button type="button" data-pronounce="${esc(example.id)}" data-kind="text" aria-label="朗读${esc(label)}">◖))</button>`;
       return `<tr id="${i===0?'grammar-'+esc(g.id):'example-'+esc(example.id)}" data-id="${esc(g.id)}" data-example-id="${esc(example.id || '')}" class="${i===0?'grammar-start':''}">${metadata}<td class="grammar-note">${example.empty
         ? (!examples.length && i===0 ? editorCell('note',g.note,1,g.id,null,'','语法说明',q) : '')
-        : editorCell('note',example.note,1,g.id,example.id,'','语法说明',q)}</td><td class="example-cell">${content}${savedTranslations(example) ? `<details${q && savedTranslations(example).toLowerCase().includes(q) ? ' open' : ''}><summary>查看已保存译文</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;padding:6px 8px">${highlightMatch(savedTranslations(example),q)}</div></details>` : ''} </td>${grammarLinksCell(links[i])}<td class="pronunciation-cell">${audio}</td></tr>`;
+        : editorCell('note',example.note,1,g.id,example.id,'','语法说明',q)}</td><td class="example-cell">${content}${example.translation ? `<details${q && example.translation.toLowerCase().includes(q) ? ' open' : ''}><summary>查看已保存译文</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;padding:6px 8px">${highlightMatch(example.translation,q)}</div></details>` : ''} </td>${grammarLinksCell(links[i])}<td class="pronunciation-cell">${audio}</td></tr>`;
     }).join('');
     return rows+`<tr class="add-example-row" data-id="${esc(g.id)}"><td></td><td><button data-add-example="${esc(g.id)}">＋ 添加例句</button></td><td class="grammar-links"><button type="button" data-link-grammar="${esc(g.id)}">＋ 关联语法</button></td><td></td></tr>`
   }).join(''):`<tr><td colspan="5" class="empty">${q?'没有匹配记录':'点击「添加语法」开始记录。'}</td></tr>`;
-  for(const button of $('#grammarList [data-toggle-sentences]')) button.onclick=()=>{
-    const id=button.dataset.toggleSentences;
-    if(expandedSentenceGroups.has(id))expandedSentenceGroups.delete(id);
-    else expandedSentenceGroups.add(id);
-    renderGrammar();
-  };
   bindGrammarLinks();
   bindItemSorting();
   $$('#grammarList [contenteditable]').forEach(cell=>{
@@ -416,7 +398,6 @@ saveSentenceButton.onclick = () => {
     example.language = snapshot.from;
     example.detectedText = snapshot.text;
     example.translation = Object.entries(langs)
-      .filter(([lang]) => lang !== snapshot.from)
       .map(([lang, label]) => label + '：' + snapshot.texts[lang])
       .join('\n');
 
@@ -439,87 +420,27 @@ saveSentenceButton.onclick = () => {
         savedGrammarButton.hidden = true;
         return toast('这条语法已不存在');
       }
-      if (row.tag === sentenceCollectionTag) view('sentences');
-      else { view('grammar'); jumpToGrammar(row.id); }
+      view('grammar');
+      jumpToGrammar(row.id);
     };
     toast('已收藏到「' + grammarLabel(row) + '」');
   }, '保存整句原文和三语译文');
 };
 
 const githubLogin = document.createElement('a');
-const loginReturn = new URL(location.href);
-loginReturn.searchParams.set('loginReturn', '1');
-githubLogin.href = '/.auth/login/github?post_login_redirect_uri=' + encodeURIComponent(loginReturn.href);
+githubLogin.href = '/.auth/login/github';
 githubLogin.textContent = '使用 GitHub 登录';
 githubLogin.style.cssText = 'font-size:12px;color:#476578;text-underline-offset:3px';
 $('.language-options').after(githubLogin);
-const autoLoginKey = 'lingua-auto-login';
-const returnedFromLogin = new URL(location.href).searchParams.has('loginReturn');
-if (returnedFromLogin) {
-  const clean = new URL(location.href);
-  clean.searchParams.delete('loginReturn');
-  history.replaceState(null, '', clean.href);
-}
-githubLogin.onclick = () => {
-  try { localStorage.setItem(autoLoginKey, 'yes'); } catch {}
-};
 fetch('/.auth/me', { cache: 'no-store' })
   .then(response => response.ok ? response.json() : null)
   .then(result => {
-    if (!result) return;
-    const user = result.clientPrincipal;
-    if (user?.identityProvider === 'github') {
-      try { localStorage.setItem(autoLoginKey, 'yes'); sessionStorage.removeItem('lingua-login-attempt'); } catch {}
-      githubLogin.textContent = '退出 GitHub';
-      githubLogin.href = '/.auth/logout';
-      githubLogin.onclick = () => {
-        try { localStorage.removeItem(autoLoginKey); } catch {}
-      };
-      return;
-    }
-    try {
-      if (!returnedFromLogin && localStorage.getItem(autoLoginKey) === 'yes' &&
-          !sessionStorage.getItem('lingua-login-attempt')) {
-        sessionStorage.setItem('lingua-login-attempt', 'yes');
-        location.replace(githubLogin.href);
-      }
-    } catch {}
+    const user = result?.clientPrincipal;
+    if (user?.identityProvider !== 'github') return;
+    githubLogin.textContent = '退出 GitHub';
+    githubLogin.href = '/.auth/logout';
   })
   .catch(() => {});
-
-function renderSentences() {
-  const rows = [];
-  const query = $('#sentenceSearch').value.trim().toLowerCase();
-  for (const grammar of db.grammar.filter(item=>item.tag==='lingua-sentence-collection')) {
-    for (const example of normalizeExamples(grammar)) {
-      if (![example.text,example.translation,example.note].join(' ').toLowerCase().includes(query)) continue;
-      rows.push(`<tr data-sentence-grammar="${esc(grammar.id)}" data-sentence-example="${esc(example.id)}">
-        <td><div contenteditable="plaintext-only" role="textbox" aria-label="句子说明" data-sentence-note>${esc(example.note)}</div></td>
-        <td colspan="2"><details><summary>${esc(example.text)}</summary><div class="sentence-translations">${esc(savedTranslations(example))}</div></details></td>
-        <td><button type="button" data-sentence-audio>◖))</button><button type="button" data-sentence-delete>删除</button></td></tr>`);
-    }
-  }
-  $('#sentenceList').innerHTML = rows.join('') || '<tr><td colspan="4" class="empty">暂无匹配的收藏句子。</td></tr>';
-  for (const row of $$('#sentenceList tr[data-sentence-example]')) {
-    const grammar = db.grammar.find(item=>item.id===row.dataset.sentenceGrammar);
-    const example = grammar.exampleItems.find(item=>item.id===row.dataset.sentenceExample);
-    row.querySelector('[data-sentence-audio]').onclick = () => speak(example.text,example.language||speechLanguage(example.text));
-    row.querySelector('[data-sentence-note]').oninput = event => {
-      const previous = example.note;
-      example.note = event.currentTarget.innerText;
-      if (!persist()) {example.note=previous;event.currentTarget.textContent=previous;}
-    };
-    row.querySelector('[data-sentence-delete]').onclick = () => {
-      if (!confirm('删除这条收藏句子及其翻译？')) return;
-      const previous = grammar.exampleItems, previousText = grammar.examples;
-      grammar.exampleItems = previous.filter(item=>item.id!==example.id);
-      syncExamples(grammar);
-      if (!persist()) {grammar.exampleItems=previous;grammar.examples=previousText;}
-      renderSentences();
-    };
-  }
-}
-$('#sentenceSearch').oninput = renderSentences;
 
 function renderWords() {
   $('#wordList').innerHTML = db.words.length ? db.words.map(word => {
@@ -723,8 +644,6 @@ function setGrammarLink(a,b,linked){
   }
 }
 function jumpToGrammar(id){
-  const target = db.grammar.find(item=>item.id===id);
-  if(target?.tag==='lingua-sentence-collection'){view('sentences');return;}
   $('#search').value='';
   renderGrammar();
   const row=$$('#grammarList .grammar-start').find(item=>item.dataset.id===id);
