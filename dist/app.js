@@ -213,6 +213,14 @@ function highlightMatch(value, query) {
   return html + esc(text.slice(offset));
 }
 function editorCell(field,value,col,id,exampleId,placeholder,label,query){return `<div contenteditable="true" role="textbox" aria-label="${esc(label)}" data-field="${field}" data-col="${col}" ${exampleId?`data-example="${esc(exampleId)}"`:''} data-placeholder="${placeholder}" spellcheck="true">${highlightMatch(value,query)}</div>`}
+function savedTranslations(example) {
+  const text = String(example.text || '').trim();
+  const source = langs[normalizeLanguage(example.language || speechLanguage(text))];
+  return String(example.translation || '').split('\n').filter(line => {
+    const match = line.match(/^(English|中文|日本語)[：:]\s*(.*)$/u);
+    return !match || match[1] !== source || match[2].trim() !== text;
+  }).join('\n');
+}
 function renderGrammar(){
   const q=$('#search').value.trim().toLowerCase();db.grammar.forEach(syncExamples);
   const gs=db.grammar.filter(g=>[...fields.map(k=>g[k]||''),...g.exampleItems.map(e=>e.note)].join(' ').toLowerCase().includes(q));
@@ -229,7 +237,7 @@ function renderGrammar(){
       const audio = example.empty ? '' : `<button type="button" data-pronounce="${esc(example.id)}" data-kind="text" aria-label="朗读${esc(label)}">◖))</button>`;
       return `<tr id="${i===0?'grammar-'+esc(g.id):'example-'+esc(example.id)}" data-id="${esc(g.id)}" data-example-id="${esc(example.id || '')}" class="${i===0?'grammar-start':''}">${metadata}<td class="grammar-note">${example.empty
         ? (!examples.length && i===0 ? editorCell('note',g.note,1,g.id,null,'','语法说明',q) : '')
-        : editorCell('note',example.note,1,g.id,example.id,'','语法说明',q)}</td><td class="example-cell">${content}${example.translation ? `<details${q && example.translation.toLowerCase().includes(q) ? ' open' : ''}><summary>查看已保存译文</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;padding:6px 8px">${highlightMatch(example.translation,q)}</div></details>` : ''} </td>${grammarLinksCell(links[i])}<td class="pronunciation-cell">${audio}</td></tr>`;
+        : editorCell('note',example.note,1,g.id,example.id,'','语法说明',q)}</td><td class="example-cell">${content}${savedTranslations(example) ? `<details${q && savedTranslations(example).toLowerCase().includes(q) ? ' open' : ''}><summary>查看已保存译文</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;padding:6px 8px">${highlightMatch(savedTranslations(example),q)}</div></details>` : ''} </td>${grammarLinksCell(links[i])}<td class="pronunciation-cell">${audio}</td></tr>`;
     }).join('');
     return rows+`<tr class="add-example-row" data-id="${esc(g.id)}"><td></td><td><button data-add-example="${esc(g.id)}">＋ 添加例句</button></td><td class="grammar-links"><button type="button" data-link-grammar="${esc(g.id)}">＋ 关联语法</button></td><td></td></tr>`
   }).join(''):`<tr><td colspan="5" class="empty">${q?'没有匹配记录':'点击「添加语法」开始记录。'}</td></tr>`;
@@ -398,6 +406,7 @@ saveSentenceButton.onclick = () => {
     example.language = snapshot.from;
     example.detectedText = snapshot.text;
     example.translation = Object.entries(langs)
+      .filter(([lang]) => lang !== snapshot.from)
       .map(([lang, label]) => label + '：' + snapshot.texts[lang])
       .join('\n');
 
