@@ -5,7 +5,7 @@ const uid=()=>crypto.randomUUID();let db,api={key:'',region:''},source='en',time
 try{db=JSON.parse(localStorage.getItem('lingua-v1'))}catch{}if(!db||!Array.isArray(db.grammar)||!Array.isArray(db.words))db={grammar:[],words:[]};
 function toast(text){$('#toast').textContent=text;$('#toast').style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').style.display='none',3500)}
 function persist(){try{localStorage.setItem('lingua-v1',JSON.stringify(db));$('#saveState').textContent='已自动保存';return true}catch{$('#saveState').textContent='保存失败，请导出备份';toast('浏览器存储不可用，请导出备份');return false}}
-function view(name){if(name==='settings'&&!translatorAccess.owner)return;document.body.classList.toggle('grammar-workspace',name==='grammar');$$('.view').forEach(el=>el.hidden=el.id!==name);$$('nav button').forEach(el=>el.classList.toggle('active',el.dataset.view===name));if(name==='grammar')renderGrammar();if(name==='words')renderWords();if(name==='dictation')refreshDictationProgress()}
+function view(name){if(name==='settings'&&!translatorAccess.owner)return;document.body.classList.toggle('grammar-workspace',name==='grammar');document.body.classList.toggle('words-workspace',name==='words');$$('.view').forEach(el=>el.hidden=el.id!==name);$$('nav button').forEach(el=>el.classList.toggle('active',el.dataset.view===name));if(name==='grammar')renderGrammar();if(name==='words')renderWords();if(name==='dictation')refreshDictationProgress()}
 $$('[data-view]').forEach(b=>b.onclick=()=>view(b.dataset.view));
 let translatorAccess = { owner: false, configured: false, shared: false };
 const apiSettingsLinks = $$('[data-view="settings"]');
@@ -451,14 +451,19 @@ fetch('/.auth/me', { cache: 'no-store' })
   })
   .catch(() => {});
 
+$('#wordSearch').oninput = renderWords;
 function renderWords() {
-  $('#wordList').innerHTML = db.words.length ? db.words.map(word => {
+  const query = $('#wordSearch').value.trim().toLowerCase();
+  const words = db.words.filter(word => [word.text, word.meaning,
+    ...(Array.isArray(word.examples) ? word.examples.map(example => example.text) : [])
+  ].join(' ').toLowerCase().includes(query));
+  $('#wordList').innerHTML = words.length ? words.map(word => {
     const examples = Array.isArray(word.examples) ? word.examples : [];
-    return `<tr><td>${esc(word.text)}</td><td><div class="word-meaning" contenteditable="plaintext-only" role="textbox" aria-label="编辑释义" aria-multiline="true" data-word-meaning="${esc(word.id)}">${esc(word.meaning)}</div></td><td>${examples.map(example =>
-      `<div class="word-example">${esc(example.text)}</div>`).join('')}</td>
+    return `<tr><td>${highlightMatch(word.text,query)}</td><td><div class="word-meaning" contenteditable="plaintext-only" role="textbox" aria-label="编辑释义" aria-multiline="true" data-word-meaning="${esc(word.id)}">${highlightMatch(word.meaning,query)}</div></td><td>${examples.map(example =>
+      `<div class="word-example">${highlightMatch(example.text,query)}</div>`).join('')}</td>
       <td><button type="button" data-word-audio="${esc(word.id)}" aria-label="朗读单词">◖))</button>
       <button type="button" data-word-delete="${esc(word.id)}">移除</button></td></tr>`;
-  }).join('') : '<tr><td colspan="4" class="empty">还没有收藏单词。</td></tr>';
+  }).join('') : `<tr><td colspan="4" class="empty">${query ? '没有匹配记录' : '还没有收藏单词。'}</td></tr>`;
   for (const cell of $$('#wordList [data-word-meaning]')) cell.oninput = () => {
     const word = db.words.find(item => item.id === cell.dataset.wordMeaning);
     if (!word) return;

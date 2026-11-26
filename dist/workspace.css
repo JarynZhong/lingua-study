@@ -91,3 +91,15 @@ body{margin:0;height:100dvh;overflow:hidden}aside{width:172px;padding:26px 14px}
 #wordTable tbody td{font-size:18px}
 #wordTable .word-meaning{min-height:1.5em;white-space:pre-wrap}
 #wordTable .word-meaning:focus{outline:2px solid #76b4dd;outline-offset:2px;border-radius:3px}
+
+.words-workspace #words{display:flex;flex-direction:column;overflow:hidden;padding:0;min-height:0}
+.words-workspace #words[hidden]{display:none}
+.words-workspace #words .heading{display:flex;align-items:center;gap:20px;flex:none;margin:14px 0 10px}
+.words-workspace #words .heading h1{font-size:21px;margin:0;white-space:nowrap}
+.words-workspace #words .heading p{font-size:11px;margin:0}
+.words-workspace #words .list-tools{flex:none;margin:0 0 8px;gap:6px}
+#wordSearch{flex:1;min-width:130px;padding:9px 12px;font-size:12px}
+.words-workspace #words .sheet-scroll{flex:1;min-height:0;max-height:none;width:100%;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+#wordTable thead th{position:sticky;top:0;z-index:1;background:#e3f2ff}
+#wordTable mark{background:#ffe28a;color:inherit;border-radius:2px}
+@media(max-width:650px){.words-workspace #words .heading{margin:8px 0;gap:8px}.words-workspace #words .heading h1{font-size:18px}.words-workspace #words .heading p{display:none}}
